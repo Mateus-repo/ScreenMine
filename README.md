@@ -39,5 +39,4 @@ a statement about what CoScreen intended.
 
 Resolving this needs the upstream author. Only **Ma3stro567** can say whether
 CoScreen is `-only` or `-or-later`, and only they can permit re-licensing. Until
-then the ambiguity stands. An issue has been opened on CoScreen asking; the answer
-will be recorded in `NOTICE`.
+then the ambiguity stands. An issue still needs to be opened on CoScreen asking; once answered, the`r`nresult will be recorded in `NOTICE`.

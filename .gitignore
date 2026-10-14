@@ -1,0 +1,22 @@
+# Gradle / Loom
+build/
+.gradle/
+run/
+*.log
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Eclipse / VS Code
+.classpath
+.project
+.settings/
+bin/
+.vscode/
+
+# настройки мода, которые пишутся во время игры
+config/screenmine.properties

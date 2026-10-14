@@ -11,14 +11,14 @@
   "environment": "client",
   "entrypoints": {
     "client": [
-      "dev.screenmine.ScreenMineClient"
+      "dev.screenmine.spike.SpikeClient"
     ]
   },
   "depends": {
     "fabricloader": ">=${loader_version}",
     "minecraft": "~${minecraft_version}",
-    "java": ">=21",
+    "java": ">=25",
     "fabric-api": "*",
-    "mcef": "*"
+    "mcef-modern": "*"
   }
 }

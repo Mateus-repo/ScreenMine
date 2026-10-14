@@ -1,4 +1,4 @@
-# progresso.md — ScreenMine · 1.21.4 → 26.3
+﻿# progresso.md — ScreenMine · 1.21.4 → 26.3
 
 _Atualiza no fim de cada passo. Mantém curto e factual._
 
@@ -7,10 +7,12 @@ _Atualiza no fim de cada passo. Mantém curto e factual._
 > lido como fonte de verdade e tinha nomes ainda por confirmar.
 
 ## Estado atual
-- **Fase:** 3 — Spikes (spike de render world-space ainda por fazer)
-- **Compila?** Não — 200 erros, todos estruturais (nomes já migrados)
-- **Corre no jogo?** Não testado
-- **Último commit:** `e9c2594` — build, identidade, rename mecânico, browser
+- **Fase:** 3 — Spikes ✅ **a incógnita do render world-space está resolvida**
+- **Compila?** Sim, mas só o spike; o resto do código está estacionado em
+  `%TEMP%/opencode/parked/screenmine` e tem de ser reposto
+- **Corre no jogo?** Parcial — browser confirmado em runtime; o quad no mundo
+  ainda não foi visto (falta entrar num mundo)
+- **Último commit:** ver `git log`
 
 ## Fases
 - [x] 0. Reconhecimento
@@ -36,11 +38,11 @@ _Atualiza no fim de cada passo. Mantém curto e factual._
 ## Riscos conhecidos
 | Risco | Estado | Notas |
 |---|---|---|
-| Desenhar quad com textura própria no mundo | **por provar** | É o spike. Sem isto o mod não cumpre a função principal. |
+| Desenhar quad com textura própria no mundo | ✅ **resolvido** | Spike compilou e o browser correu. Falta só ver o quad. |
 | Scroll/teclas no mundo em SDL3 | por resolver | Não há evento Fabric. Planeado: mixins em `MouseHandler`/`KeyboardHandler`. |
 | Ordem de desenho vs. nuvens | aceite | `WorldRenderEvents.LAST` não existe. `LevelRenderEvents.END_MAIN` corre **antes** das nuvens. Regressão a registar. |
-| `mcef-modern` bloqueia a render thread | por testar | `getInstance()` bloqueia; usamos `initialize().isDone()`. Falta confirmar em `runClient`. |
-| Chromium download no 1.º arranque | por testar | O placeholder cinzento tem de desaparecer sozinho. |
+| `mcef-modern` bloqueia a render thread | ✅ ok | Browser criado no tick 10 s após arrancar, sem travar. |
+| Chromium download no 1.º arranque | ✅ ok | Chromium carregou e subiu uma frame para a `GpuTextureView`. |
 | Licença | por resolver | CoScreen é **AGPL-3.0**, ScreenMine é **MIT**. Confirmar titularidade antes de publicar e dar crédito. |
 | Nomes de API ainda em fluxo | menor | `LevelRenderEvents` foi renomeado nos 26.x e os docs ainda migravam no lançamento. |
 
@@ -54,6 +56,16 @@ _Atualiza no fim de cada passo. Mantém curto e factual._
 - (2026-10-14) **MCEF do CinemaMod está morto** → `mcef-modern` (DimasKama).
   O upstream acaba em `2.1.6-1.21.4` e usa `org.lwjgl.glfw`, que não existe na 26.3.
   O maintainer autorizou forks.
+- (2026-10-14) **Render world-space via `AbstractTexture` registado no
+  `TextureManager`.** Confirmado com `javap` que `RenderSetupBuilder` só aceita
+  `Identifier` e que não há ponte pública de `TextureSetup` para world space.
+  A solução é subclassear `AbstractTexture` a devolver a `GpuTextureView` do
+  browser e registá-la com `TextureManager.register(Identifier, AbstractTexture)`;
+  a partir daí `RenderTypes.text(id)` funciona como em vanilla. **Só API pública —
+  sem mixin, sem access widener, sem `RenderPipeline` custom.**
+- (2026-10-14) **`BrowserTexture.close()` tem de ser no-op.** O default de
+  `AbstractTexture` fecha a `GpuTexture`, que é do browser — fechá-la aqui
+  libertaria a textura debaixo das feetas dele (double free).
 - (2026-10-14) **Spike de render antes da GUI.** A GUI são ~120 erros mecânicos;
   se o render world-space não for possível, esse trabalho era perdido. Render
   primeiro, mesmo custando mais.
@@ -136,13 +148,42 @@ Jar usado: `.gradle/loom-cache/minecraftMaven/net/minecraft/minecraft-merged-7e9
 - Mod id do dependente é **`mcef-modern`**, não `mcef`.
 - Embute `jcef-api` + `jcefmaven` com `include()`, logo não os gerimos à mão.
 
-## Perguntas em aberto (responder com o spike / `runClient`)
-1. Existe um `RenderSetup` / estado de render **world-space** que aceite um
-   `TextureSetup` (e não um `Identifier`)? Se não, plano B é `FeatureRenderer`
-   próprio via `FeatureRendererRegistry` + `SubmitRenderPhases`.
-2. O `mcef-modern` bloqueia a render thread durante o download do Chromium?
+## Perguntas em aberto
+1. ~~Existe um estado world-space que aceite `TextureSetup`?~~ **Respondida: não,
+   e não é preciso** — ver a decisão do `AbstractTexture` acima.
+2. ~~O `mcef-modern` bloqueia a render thread?~~ **Respondida: não.**
 3. O input via SDL3 chega ao CEF com o comportamento certo (mesmo nome, outra
-   semântica é o risco clássico aqui)?
+   semântica é o risco clássico aqui). **Por testar em jogo.**
+4. `RenderTypes.text()` tem lightmap. O CoScreen desenhava *unlit* (o ecrã
+   mantinha-se legível à noite). Provavelmente há de usar outro `RenderType` ou
+   um sem lightmap. **Por testar.**
+5. Ordem de desenho: `END_MAIN` corre antes das nuvens; o CoScreen 1.21.4
+   desenhava depois. **Por decidir** se há alternativa.
+
+## Resultado do spike (2026-10-14)
+Compila contra MC 26.3 e corre. Cadeia toda confirmada:
+`LevelRenderEvents.END_MAIN` → `ctx.poseStack()` /
+`ctx.submitNodeCollector().submitCustomGeometry(...)` / `ctx.levelState().cameraRenderState.pos`
+→ `RenderTypes.text(Identifier)` → `VertexConsumer.addVertex(Pose, …).setUv().setColor()`
+→ `TextureManager.register(Identifier, AbstractTexture)`.
+
+Em runtime (`runClient`):
+```
+spike registered on LevelRenderEvents.END_MAIN
+BROWSER CREATED, texture registered as screenmine:spike/browser
+TEXTURE VIEW PRESENT — mcef-modern uploaded a frame
+```
+Sem erros do lado do Minecraft. O ruído `cast_crl.cc / CRL - Verification failed`
+é do próprio Chromium, não nosso.
+
+**O que o spike NÃO provou:** o draw do quad. O cliente ficou no menu principal,
+onde não há mundo, por isso `SPIKE DRAW OK` nunca apareceu no log. Falta um humano
+entrar num mundo e confirmar que o ecrã se vê — e aí validar orientação, culling,
+espelhamento e luz.
+
+Armadilha apanhada pelo caminho: `PoseStack.mulPose(Quaternionf)` **deixou de
+existir** na 26.3. É `pose.rotateDegrees(Axis.YP, graus)`. Confirma a regra de
+que nomes que ficam iguais mudam de assinatura.
 
 ## Registo de sessões
 - **2026-10-14** — Repo novo `ScreenMine` criado (estava vazio, MIT © Mateus).

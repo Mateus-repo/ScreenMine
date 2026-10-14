@@ -38,7 +38,7 @@ _Atualiza no fim de cada passo. Mantém curto e factual._
 ## Riscos conhecidos
 | Risco | Estado | Notas |
 |---|---|---|
-| Desenhar quad com textura própria no mundo | ✅ **resolvido** | Spike compilou e o browser correu. Falta só ver o quad. |
+| Desenhar quad com textura própria no mundo | 🟡 **arquitectura resolvida, execução por confirmar** | API compila e o browser corre; falta entrar num mundo para ver o quad. |
 | Scroll/teclas no mundo em SDL3 | por resolver | Não há evento Fabric. Planeado: mixins em `MouseHandler`/`KeyboardHandler`. |
 | Ordem de desenho vs. nuvens | aceite | `WorldRenderEvents.LAST` não existe. `LevelRenderEvents.END_MAIN` corre **antes** das nuvens. Regressão a registar. |
 | `mcef-modern` bloqueia a render thread | ✅ ok | Browser criado no tick 10 s após arrancar, sem travar. |
@@ -180,6 +180,28 @@ Sem erros do lado do Minecraft. O ruído `cast_crl.cc / CRL - Verification faile
 onde não há mundo, por isso `SPIKE DRAW OK` nunca apareceu no log. Falta um humano
 entrar num mundo e confirmar que o ecrã se vê — e aí validar orientação, culling,
 espelhamento e luz.
+
+### Tentativas de entrar num mundo sem humano (ambas falharam)
+1. Copiei um mundo 26.3 de `AFK-BOT--NO-MODS-\servidores\paper-26.3\mundo-afk`
+   para `run/saves/spiketest` e arranquei com `--quickPlaySingleplayer`.
+   **Falhou:** `Missing data pack paper` → `Failed to load level data or datapacks`.
+   É um mundo de servidor Paper; o cliente não tem esse datapack. Não é recuperável.
+2. `--demo` para usar um mundo pré-gerado. **Não arrancou mundo** (o build falhou
+   antes, por causa do código principal ter voltado a `src/`).
+
+Não há mais mundos 26.3 na máquina (`Server26_3_Fabric` também está vazio). Criar um
+mundo válido exige o cliente a correr, que é o que não se pode observar sem um
+humano. **Este passo fica para teste manual.** Decisão: a arquitectura do render já
+está provada (API pública, sem mixins), o que falta é escolher o `RenderType`
+correcto — um parâmetro, não um risco de arquitectura. Por isso **não bloqueia a
+migração da GUI**.
+
+### Bug encontrado no rename em massa (já corrigido)
+O regex de `MinecraftClient` → `Minecraft` tinha lookbehind `(?<!\.)` para não
+pegar em membros, mas isso também **impedia o match em `net.minecraft.client.MinecraftClient`**.
+Resultado: o import ficou por renomear em 5 ficheiros (45 linhas com restos de Yarn).
+Corrigido. Lição: imports precisam de ser tratados como caminho, com lookbehind
+ou teste separado do rename de identificadores.
 
 ### Spike agora testável sem keybinds
 Ao entrar num mundo, o spike larga **um quad fixo 3 blocos à frente do jogador**,

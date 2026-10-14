@@ -5,7 +5,7 @@ import dev.screenmine.Lang;
 import dev.screenmine.state.StreamInfo;
 import dev.screenmine.world.PlacedScreen;
 import dev.screenmine.world.ScreenWorld;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 import net.minecraft.ChatFormatting;

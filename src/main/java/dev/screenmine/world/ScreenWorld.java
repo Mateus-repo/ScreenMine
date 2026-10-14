@@ -2,7 +2,7 @@ package dev.screenmine.world;
 
 import dev.screenmine.Cfg;
 import dev.screenmine.browser.BrowserInstance;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 

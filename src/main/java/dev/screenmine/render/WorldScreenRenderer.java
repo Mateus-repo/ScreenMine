@@ -5,7 +5,7 @@ import dev.screenmine.ScreenMineClient;
 import dev.screenmine.world.PlacedScreen;
 import dev.screenmine.world.ScreenWorld;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderPipelines;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.MeshData;

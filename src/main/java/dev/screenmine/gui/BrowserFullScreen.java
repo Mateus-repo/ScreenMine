@@ -1,68 +1,71 @@
 package dev.screenmine.gui;
 
-import dev.screenmine.Lang;
-import com.cinemamod.mcef.MCEFBrowser;
+import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.systems.RenderSystem;
-import dev.screenmine.ScreenMineClient;
+import com.mojang.blaze3d.platform.Window;
+import com.mojang.renderpearl.api.textures.FilterMode;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
+import com.mojang.renderpearl.api.textures.GpuSampler;
+import dev.screenmine.Lang;
 import dev.screenmine.world.PlacedScreen;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.RenderPipelines;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.screens.Screen;
-import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.MeshData;
-import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.renderpearl.api.vertex.VertexFormat;
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import net.minecraft.network.chat.Component;
+import net.dimaskama.mcef.api.MCEFBrowser;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.render.TextureSetup;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.state.gui.BlitRenderState;
+import net.minecraft.network.chat.Component;
+import org.joml.Matrix3x2f;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * Full-screen view of a screen's browser, with real keyboard and mouse.
+ * Fullscreen browser overlay.
  *
- * <p>Mirrors the 1.21.11 build: the off-screen surface is resized to the window
- * while this is open, so the picture fills the screen and mouse coordinates map
- * one to one with no letterbox maths. On close the surface goes back to the
- * fixed resolution the in-world quad uses. Closing does <em>not</em> close the
- * browser — it stays alive on the wall.
+ * <p>Ported to 26.3: the immediate-mode draw is gone (no {@code Tessellator}, no
+ * {@code RenderSystem.setShaderTexture}), so the frame is pushed into
+ * {@code guiRenderState} as a {@link BlitRenderState}, exactly as mcef-modern's
+ * own testmod does. The texture is a {@code GpuTextureView} straight from the
+ * browser, wrapped in a {@link TextureSetup}.
  */
 public final class BrowserFullScreen extends Screen {
 
+    private static final Logger LOG = LoggerFactory.getLogger("ScreenMine");
+
     private final PlacedScreen screen;
+    private final Screen parent;
 
     public BrowserFullScreen(PlacedScreen screen) {
-        super(Component.literal(Lang.t("browser.title")));
-        this.screen = screen;
+        this(screen, null);
     }
 
-    @Override
-    protected void init() {
-        super.init();
-        screen.browser.ensureCreated();
+    public BrowserFullScreen(PlacedScreen screen, Screen parent) {
+        super(Component.literal("ScreenMine"));
+        this.screen = screen;
+        this.parent = parent;
         fitToWindow();
-        if (screen.browser.raw() != null) {
-            screen.browser.raw().setFocus(true);
-        }
     }
 
     /**
-     * Sizes the off-screen surface to the window's real pixels.
-     *
-     * <p>{@code width}/{@code height} on a Screen are GUI-scaled, so at GUI
-     * scale 3 they are a third of the window. Handing those to the browser makes
-     * it lay the page out for a tiny viewport, which then gets stretched over
-     * the whole window — the page comes out looking zoomed in. The framebuffer
-     * size is the honest number.
+     * {@code width}/{@code height} on a Screen are GUI-scaled, so at GUI scale 3
+     * they are a third of the window. Handing those to the browser makes it lay
+     * the page out for a tiny viewport, which then gets stretched over the whole
+     * window — the page comes out looking zoomed in. The framebuffer size is the
+     * honest number.
      */
     private void fitToWindow() {
-        Minecraft mc = Minecraft.getInstance();
-        screen.browser.resize(mc.getWindow().getFramebufferWidth(),
-                mc.getWindow().getFramebufferHeight());
+        Window w = Minecraft.getInstance().getWindow();
+        screen.browser.resize(w.getWidth(), w.getHeight());
     }
 
     /** GUI-scaled coordinate to a real pixel, for the browser's mouse input. */
     private static int px(double scaled) {
-        return (int) Math.round(scaled * Minecraft.getInstance().getWindow().getScaleFactor());
+        return (int) Math.round(scaled * Minecraft.getInstance().getWindow().getGuiScale());
     }
 
     private MCEFBrowser browser() {
@@ -70,146 +73,156 @@ public final class BrowserFullScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
-        // Background and widgets first — Screen.render() paints the background.
-        super.render(ctx, mouseX, mouseY, delta);
+    public void extractRenderState(GuiGraphicsExtractor gfx, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(gfx, mouseX, mouseY, delta);
 
         if (!screen.browser.ensureCreated() || !screen.browser.ready()) {
-            ctx.drawCenteredTextWithShadow(textRenderer,
+            gfx.centeredText(font,
                     Component.literal(Lang.t("browser.starting")).withStyle(ChatFormatting.GRAY),
                     width / 2, height / 2, 0xFFFFFF);
             return;
         }
 
-        // GuiGraphicsExtractor batches its geometry and flushes at the end of the frame,
-        // while the quad below is drawn immediately. Without this flush the
-        // batched background lands on top of the browser and the screen is black.
-        ctx.draw();
+        GpuTextureView view = screen.browser.textureView();
+        if (view != null) {
+            GpuSampler sampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
+            gfx.guiRenderState.addGuiElement(new BlitRenderState(
+                    RenderPipelines.GUI_TEXTURED,
+                    TextureSetup.singleTexture(view, sampler),
+                    new Matrix3x2f(gfx.pose()),
+                    0, 0, width, height,
+                    0.0F, 1.0F, 0.0F, 1.0F,
+                    0xFFFFFFFF,
+                    gfx.scissorStack.peek()));
+        }
 
-        RenderSystem.disableDepthTest();
-        RenderSystem.disableBlend();
-        RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-        RenderSystem.setShaderTexture(0, screen.browser.textureId());
+        // Let the page pick the OS cursor shape; it no longer steals the grab.
+        MCEFBrowser b = browser();
+        if (b != null && b.getCursorType() != null) {
+            gfx.requestCursor(b.getCursorType());
+        }
 
-        BufferBuilder t = BufferBuilder.getInstance();
-        BufferBuilder b = t.begin(VertexFormat.DrawMode.QUADS, DefaultVertexFormat.POSITION_TEXTURE_COLOR);
-        b.vertex(0f, height, 0f).texture(0f, 1f).color(255, 255, 255, 255);
-        b.vertex(width, height, 0f).texture(1f, 1f).color(255, 255, 255, 255);
-        b.vertex(width, 0f, 0f).texture(1f, 0f).color(255, 255, 255, 255);
-        b.vertex(0f, 0f, 0f).texture(0f, 0f).color(255, 255, 255, 255);
-        BufferRenderer.drawWithGlobalProgram(b.end());
-
-        RenderSystem.setShaderTexture(0, 0);
-        RenderSystem.enableDepthTest();
-
-        ctx.drawCenteredTextWithShadow(textRenderer,
-                Component.literal(Lang.t("browser.close.hint"))
-                        .withStyle(ChatFormatting.DARK_GRAY),
+        gfx.centeredText(font,
+                Component.literal(Lang.t("browser.close.hint")).withStyle(ChatFormatting.DARK_GRAY),
                 width / 2, height - 12, 0xFFFFFF);
     }
 
     @Override
-    public void resize(Minecraft mc, int w, int h) {
-        super.resize(mc, w, h);
+    public void resize(int w, int h) {
+        super.resize(w, h);
         fitToWindow();
     }
 
     // ----------------------------------------------------------------- input //
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (browser() != null) {
-            browser().sendMousePress(px(mouseX), px(mouseY), button);
-            browser().setFocus(true);
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
+        MCEFBrowser b = browser();
+        if (b != null) {
+            b.onMouseClicked(event, doubled);
+            b.setFocus(true);
             return true;
         }
-        return super.mouseClicked(mouseX, mouseY, button);
+        return super.mouseClicked(event, doubled);
     }
 
     @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (browser() != null) {
-            browser().sendMouseRelease(px(mouseX), px(mouseY), button);
+    public boolean mouseReleased(MouseButtonEvent event) {
+        MCEFBrowser b = browser();
+        if (b != null) {
+            b.onMouseReleased(event);
             return true;
         }
-        return super.mouseReleased(mouseX, mouseY, button);
+        return super.mouseReleased(event);
     }
 
     @Override
     public void mouseMoved(double mouseX, double mouseY) {
-        if (browser() != null) {
-            browser().sendMouseMove(px(mouseX), px(mouseY));
+        MCEFBrowser b = browser();
+        if (b != null) {
+            b.onMouseMoved(px(mouseX), px(mouseY));
         }
         super.mouseMoved(mouseX, mouseY);
     }
 
     @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double dx, double dy) {
-        if (browser() != null) {
-            browser().sendMouseMove(px(mouseX), px(mouseY));
+    public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        MCEFBrowser b = browser();
+        if (b != null) {
+            b.onMouseMoved(px(event.x()), px(event.y()));
             return true;
         }
-        return super.mouseDragged(mouseX, mouseY, button, dx, dy);
+        return super.mouseDragged(event, dx, dy);
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
-        if (browser() != null) {
-            browser().sendMouseWheel(px(mouseX), px(mouseY), vertical, 0);
+        MCEFBrowser b = browser();
+        if (b != null) {
+            b.onMouseScrolled(px(mouseX), px(mouseY), vertical);
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == 256) {   // Esc always closes the overlay
-            close();
+    public boolean keyPressed(KeyEvent event) {
+        // Esc always closes the overlay. Uses the vanilla helper rather than the
+        // old GLFW 256: the 26.3 backend is SDL.
+        if (event.isEscape()) {
+            onClose();
             return true;
         }
-        if (browser() != null) {
-            browser().sendKeyPress(keyCode, scanCode, modifiers);
-            browser().setFocus(true);
+        MCEFBrowser b = browser();
+        if (b != null) {
+            b.onKeyPressed(event);
+            b.setFocus(true);
             return true;
         }
-        return super.keyPressed(keyCode, scanCode, modifiers);
+        return super.keyPressed(event);
     }
 
     @Override
-    public boolean keyReleased(int keyCode, int scanCode, int modifiers) {
-        if (browser() != null) {
-            browser().sendKeyRelease(keyCode, scanCode, modifiers);
+    public boolean keyReleased(KeyEvent event) {
+        MCEFBrowser b = browser();
+        if (b != null) {
+            b.onKeyReleased(event);
             return true;
         }
-        return super.keyReleased(keyCode, scanCode, modifiers);
+        return super.keyReleased(event);
     }
 
     @Override
-    public boolean charTyped(char codePoint, int modifiers) {
-        if (codePoint == 0) {
+    public boolean charTyped(CharacterEvent event) {
+        // Separate from keyPressed on purpose: text needs the character events,
+        // not the key events, or accented input and IME composition break.
+        if (event.codepoint() == 0) {
             return false;
         }
-        if (browser() != null) {
-            browser().sendKeyTyped(codePoint, modifiers);
-            browser().setFocus(true);
+        MCEFBrowser b = browser();
+        if (b != null) {
+            b.onCharTyped(event);
+            b.setFocus(true);
             return true;
         }
-        return super.charTyped(codePoint, modifiers);
+        return super.charTyped(event);
     }
 
     @Override
-    public void close() {
-        if (browser() != null) {
-            browser().setFocus(false);
+    public void onClose() {
+        MCEFBrowser b = browser();
+        if (b != null) {
+            b.setFocus(false);
         }
         screen.browser.resetSurface();
-        ScreenMineClient.get().onLocalNavigate(screen.streamId, screen.browser.url());
-        client.setScreen(null);
+        // Was ScreenMineClient#get().onLocalNavigate(...) in the full port. The
+        // sync layer does not exist on this spike branch, so just record it.
+        LOG.info("closed overlay for stream {} at {}", screen.streamId, screen.browser.url());
+        minecraft.gui.setScreen(parent);
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 }

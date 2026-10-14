@@ -43,7 +43,7 @@ _Atualiza no fim de cada passo. Mantém curto e factual._
 | Ordem de desenho vs. nuvens | aceite | `WorldRenderEvents.LAST` não existe. `LevelRenderEvents.END_MAIN` corre **antes** das nuvens. Regressão a registar. |
 | `mcef-modern` bloqueia a render thread | ✅ ok | Browser criado no tick 10 s após arrancar, sem travar. |
 | Chromium download no 1.º arranque | ✅ ok | Chromium carregou e subiu uma frame para a `GpuTextureView`. |
-| Licença | por resolver | CoScreen é **AGPL-3.0**, ScreenMine é **MIT**. Confirmar titularidade antes de publicar e dar crédito. |
+| Licença | ✅ **resolvida** | CoScreen é AGPL-3.0 e o ScreenMine é obra derivada → AGPL-3.0, com NOTICE. |
 | Nomes de API ainda em fluxo | menor | `LevelRenderEvents` foi renomeado nos 26.x e os docs ainda migravam no lançamento. |
 
 ## Decisões tomadas
@@ -245,6 +245,33 @@ blockScreenEffect  fireScreenEffect  eyes  bannerPattern  outline
 Armadilha apanhada pelo caminho: `PoseStack.mulPose(Quaternionf)` **deixou de
 existir** na 26.3. É `pose.rotateDegrees(Axis.YP, graus)`. Confirma a regra de
 que nomes que ficam iguais mudam de assinatura.
+
+## Licença (decidido 2026-10-14)
+- CoScreen é **AGPL-3.0** (verificado no `LICENSE`, incluindo a cláusula §13 de
+  interacção de rede remota).
+- O ScreenMine copiou código dele **verbatim** (`BrowserInstance`, `PlaybackSync`,
+  `AppState`, `StreamInfo`, `Packets`, `NetClient`, `Cfg`, `Settings`, `Lang`,
+  `ScreenWorld`, `PlacedScreen`). É obra derivada.
+- AGPL-3.0 §5(a) obriga a obra derivada inteira à mesma licença. **O MIT estava errado.**
+- `LICENSE` = texto AGPL-3.0 verbatim. `NOTICE` = atribuição a Ma3stro567
+  (tirado do `fabric.mod.json` do CoScreen, porque o `LICENSE` dele só tem o
+  boilerplate do FSF e não identifica titular), ficheiros transportados, e a
+  posição LGPL-2.1 do `mcef-modern`.
+- `mcef-modern` é LGPL-2.1, mod separado, `compileOnly`. Nenhum código LGPL entra
+  no nosso jar. Compatível com AGPL.
+
+## Workflow de branches (decidido 2026-10-14)
+NÃO voltar a apagar código da working tree para "estacionar".
+
+| Branch | Conteúdo | Uso |
+|---|---|---|
+| `main` | port completo (25 ficheiros, não compila ainda) | trabalho normal |
+| `spike/render` | só o spike (3 ficheiros, compila) | teste visual do quad em jogo |
+
+Trocar: `git checkout spike/render` / `git checkout main`. O `git checkout`
+repõe os ficheiros automaticamente — não há código em `%TEMP%`.
+
+Para cirugias delicadas, correr com `OPENCODE_AUTOCOMMIT=0`.
 
 ## Registo de sessões
 - **2026-10-14** — Repo novo `ScreenMine` criado (estava vazio, MIT © Mateus).

@@ -1,0 +1,45 @@
+# NOTICE
+
+## ScreenMine
+
+Copyright (C) 2026 Mateus
+
+ScreenMine is licensed under the **GNU Affero General Public License v3.0**.
+The full text is in `LICENSE`.
+
+## Derivative work
+
+ScreenMine is a port of **CoScreen** (1.21.4 → Minecraft 26.3). CoScreen was
+authored by **Ma3stro567** and was distributed under the AGPL-3.0. Substantial
+parts of its source code — including `BrowserInstance`, `PlaybackSync`,
+`AppState`, `StreamInfo`, `Packets`, `NetClient`, `Cfg`, `Settings`, `Lang`,
+`ScreenWorld` and `PlacedScreen` — were carried over into this project and
+modified.
+
+Under AGPL-3.0 §5(a), this work is therefore distributed under the same licence,
+and §4 requires that the copyright and licence notices above be preserved. The
+original CoScreen copyright notice is retained here.
+
+Note: CoScreen's own `LICENSE` file contains only the unmodified FSF boilerplate
+and names no copyright holder, so the attribution above is taken from the
+`authors` field of its `fabric.mod.json`.
+
+## Changes made
+
+The port replaces, among other things:
+
+- Yarn mappings with Mojang names (Minecraft 26.1+ ships unobfuscated)
+- GLFW with SDL3
+- the `RenderSystem` render-state API with `RenderPipeline` / `RenderPipeline`
+  world-space submission via `com.mojang.renderpearl`
+- CinemaMod MCEF (dead at 1.21.4) with `mcef-modern`
+- the mod, package and asset identities: CoScreen → ScreenMine
+
+## Third-party components
+
+`mcef-modern` (https://github.com/DimasKama/mcef-modern) is licensed
+**LGPL-2.1**. It is a separate mod installed by the player and is consumed
+compile-only; no LGPL source is included in this project's jar.
+
+Minecraft and Fabric Loader are properties of Mojang Studios and
+FabricMC respectively, and are likewise used under their own terms.

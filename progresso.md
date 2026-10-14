@@ -14,6 +14,31 @@ _Atualiza no fim de cada passo. Mantém curto e factual._
   ainda não foi visto (falta entrar num mundo)
 - **Último commit:** ver `git log`
 
+> **Contagens de erro: usar sempre `-Xmaxerrs 1000`.** Sem isso o javac pára
+> nos primeiros 100 e todas as estimativas anteriores a este commit estavam
+> truncadas e erradas. Recontagem feita em 2026-10-14 na branch `port/26.3`:
+
+| Ficheiro | Erros | Área |
+|---|---|---|
+| `ScreenMineClient` | **170** | entrypoint: GLFW→SDL, KeyMapping, eventos removidos |
+| `WorldScreenRenderer` | **108** | reescrita do render (Fase 6) |
+| `BrowserFullScreen` | 76 | browser + input por records |
+| `Hud` | 44 | API de texto |
+| `ScreenWorld` | 16 | `Vec3` vs `double` |
+| `PlacedScreen` | 8 | `Vec3` vs `double` |
+| **Total** | **434** | |
+
+Guia já migrado e a compilar: `Cfg`, `Lang`, `Settings`, `BrowserInstance`.
+
+Ordem de ataque (revista em 2026-10-14): `ScreenMineClient` → `Hud`/`ScreenWorld`/
+`PlacedScreen` → `WorldScreenRenderer` → `BrowserFullScreen` por último, porque
+o input SDL3 só se valida em jogo e o build tem de estar verde antes disso.
+
+**Alternativa em avaliação:** branch descartável `spike/browser-input` com um
+entrypoint mínimo, para validar o input→CEF sem migrar os 434 erros.
+`BrowserFullScreen` tem **1 única** chamada ao `ScreenMineClient`
+(`onLocalNavigate`, L207), por isso o acoplamento é pequeno e a via compensa.
+
 ## Fases
 - [x] 0. Reconhecimento
 - [x] 1. Build a compilar contra MC 26.3 real

@@ -137,6 +137,31 @@ Jar usado: `.gradle/loom-cache/minecraftMaven/net/minecraft/minecraft-merged-7e9
   Só está demonstrado em caminho **2D/GUI** (`BlitRenderState` + `RenderPipelines.GUI_TEXTURED`).
   A variante **world-space** é a incógnita do spike.
 
+### Matematica de `Vec3` (o `WorldScreenRenderer` vai usar a mesma)
+Verificado com `javap` no jar 26.3. **O tipo mudou de nome E de API** — um
+rename de nome só deixaria erros de método:
+
+| 1.21.4 (Yarn) | 26.3 |
+|---|---|
+| `Vec3d.dotProduct(Vec3d)` | **`Vec3.dot(Vec3)`** |
+| `Vec3d.multiply(double)` | **`Vec3.scale(double)`** |
+| `Vec3d.subtract(Vec3d)` | `Vec3.subtract(Vec3d)` (igual) |
+| `Vec3d.add(Vec3d)` / `add(double)` | `Vec3.add(...)` (igual) |
+
+Confirmados por `javap`; `dotProduct` e `multiply(double)` nao existem.
+
+### Input para o CEF: o mapeamento e feito pela biblioteca
+`mcef-modern` aceita os records vanilla directamente —
+`onKeyPressed(KeyEvent)`, `onCharTyped(CharacterEvent)`,
+`onMouseScrolled(int,int,double)`. O `impl` importa `org.lwjgl.sdl.SDLKeycode` e
+`SDLScancode`, portanto o mapeamento SDL acontece **dentro** da biblioteca.
+
+Consequencia: nao ha codigo de mapeamento nosso para escrever nem para testar
+incorrectamente. Passamos os records tal e qual.
+
+**Isto NAO substitui o teste em jogo.** O facto de haver mapeamento nao prova
+que funcione bem. Por validar: escrever texto (eventos de caracter separados dos
+de tecla), Shift, Ctrl, Backspace, setas, Ctrl+V, scroll, e clicar.
 ### Browser — mcef-modern
 - `MCEFApi.getInstance()` **bloqueia**; `initialize().isDone()` / `getInstanceFuture()` não.
 - `createBrowser(url, transparent)` — sem dimensões; depois `resize(w, h)`.

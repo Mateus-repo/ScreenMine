@@ -181,6 +181,45 @@ onde não há mundo, por isso `SPIKE DRAW OK` nunca apareceu no log. Falta um hu
 entrar num mundo e confirmar que o ecrã se vê — e aí validar orientação, culling,
 espelhamento e luz.
 
+### Spike agora testável sem keybinds
+Ao entrar num mundo, o spike larga **um quad fixo 3 blocos à frente do jogador**,
+à altura dos olhos, virado para ele, e não o segue. Loga as coordenadas
+(`QUAD PLACED at …`).
+
+Para testar num mundo plano criativo:
+1. aparece a página?
+2. está espelhada ou invertida?
+3. contornar o ecrã — vê-se a parte de trás? (diz se o RenderType faz cull)
+4. `/time set midnight` — ainda se lê? (diz se há lightmap)
+
+Usamos `RenderTypes.text(id)`, que tem lightmap. Se ficar escuro à noite, o
+candidato é `entityTranslucentEmissive` (unlit + sem cull). A lista **verificada**
+de `RenderTypes` que aceitam `Identifier` e que serve para isto:
+
+```
+text / textGrayscale / textSeeThrough / textPolygonOffset      (lightmapped)
+entityTranslucent        entityTranslucent(,boolean)           (sem "Cull" = sem culling)
+entityTranslucentEmissive                                         (unlit + sem cull)  <-- candidato
+entityTranslucentCull    entitySolid     entityCutout           (com "Cull" = culling)
+itemTranslucent  itemCutout  armorCutoutNoCull  armorTrim
+beaconBeam(id,boolean)  endCrystalBeam  energySwirl(id,f,f)    (aditivos, depth off)
+blockScreenEffect  fireScreenEffect  eyes  bannerPattern  outline
+```
+
+> Nota sobre nomes: os que **terminam em `Cull` fazem culling**, os outros não.
+> Não inferir de nomes de outro version; esta lista saiu de `javap` no jar 26.3.
+
+### Ciclo de vida da textura (requisito para o código final)
+- `BrowserTexture.getTextureView()` **tem de pedir a view ao browser a cada draw**,
+  sem cache. O MCEF Modern recria a `GpuTexture` quando o browser muda de tamanho,
+  por isso uma view guardada fica obsoleta. Já implementado assim no spike.
+- `BrowserTexture.close()` é **no-op**: a textura é do browser. O default de
+  `AbstractTexture` fechá-la-ia — double free.
+- Ao fechar um ecrã, `ScreenWorld.detach()` tem de fazer
+  `TextureManager.release(id)` **antes** de `browser.close()`, senão o
+  `AbstractTexture` registado fica a apontar para memória libertada.
+  **Ainda de implementar** no código real.
+
 Armadilha apanhada pelo caminho: `PoseStack.mulPose(Quaternionf)` **deixou de
 existir** na 26.3. É `pose.rotateDegrees(Axis.YP, graus)`. Confirma a regra de
 que nomes que ficam iguais mudam de assinatura.

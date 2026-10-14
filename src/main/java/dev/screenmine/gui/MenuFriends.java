@@ -33,21 +33,21 @@ public final class MenuFriends extends Screen {
         ScreenMineClient mod = ScreenMineClient.get();
         int cx = width / 2;
 
-        nameField = new EditBox(textRenderer, cx - 130, 40, 190, 20,
+        nameField = new EditBox(font, cx - 130, 40, 190, 20,
                 Component.literal(Lang.t("friends.name")));
         nameField.setMaxLength(32);
-        nameField.setPlaceholder(Component.literal(Lang.t("friends.name")).formatted(ChatFormatting.DARK_GRAY));
-        addDrawableChild(nameField);
+        nameField.setHint(Component.literal(Lang.t("friends.name")).withStyle(ChatFormatting.DARK_GRAY));
+        addRenderableWidget(nameField);
 
         Button addBtn = Button.builder(Component.literal(Lang.t("friends.add")), b -> {
-            String name = nameField.getText().trim();
+            String name = nameField.getValue().trim();
             if (!name.isEmpty()) {
                 mod.net().send(Packets.friendAdd(name));
-                nameField.setText("");
+                nameField.setValue("");
             }
-        }).dimensions(cx + 66, 40, 64, 20).build();
+        }).bounds(cx + 66, 40, 64, 20).build();
         addBtn.active = mod.net().isOnline();
-        addDrawableChild(addBtn);
+        addRenderableWidget(addBtn);
 
         // incoming requests first, then friends
         rows.clear();
@@ -65,58 +65,58 @@ public final class MenuFriends extends Screen {
         for (int i = page * ROWS; i < Math.min(rows.size(), (page + 1) * ROWS); i++) {
             Row row = rows.get(i);
             if (row.kind() == Row.Kind.REQUEST) {
-                addDrawableChild(Button.builder(Component.literal(Lang.t("friends.accept")),
+                addRenderableWidget(Button.builder(Component.literal(Lang.t("friends.accept")),
                         b -> {
                             mod.net().send(Packets.friendAccept(row.name()));
                             refresh();
-                        }).dimensions(cx + 10, y, 58, 20).build());
-                addDrawableChild(Button.builder(Component.literal(Lang.t("friends.decline")),
+                        }).bounds(cx + 10, y, 58, 20).build());
+                addRenderableWidget(Button.builder(Component.literal(Lang.t("friends.decline")),
                         b -> {
                             mod.net().send(Packets.friendDecline(row.name()));
                             refresh();
-                        }).dimensions(cx + 72, y, 58, 20).build());
+                        }).bounds(cx + 72, y, 58, 20).build());
             } else {
                 boolean online = mod.state().isFriendOnline(row.name());
                 Button invite = Button.builder(Component.literal(Lang.t("friends.invite")),
                         b -> {
                             mod.net().send(Packets.invite(row.name()));
                             ScreenMineClient.chat(Component.literal(Lang.t("friends.invite.sent", row.name())));
-                        }).dimensions(cx + 10, y, 78, 20).build();
+                        }).bounds(cx + 10, y, 78, 20).build();
                 invite.active = online;
-                addDrawableChild(invite);
-                addDrawableChild(Button.builder(Component.literal(Lang.t("friends.remove")),
+                addRenderableWidget(invite);
+                addRenderableWidget(Button.builder(Component.literal(Lang.t("friends.remove")),
                         b -> {
                             mod.net().send(Packets.friendRemove(row.name()));
                             refresh();
-                        }).dimensions(cx + 92, y, 58, 20).build());
+                        }).bounds(cx + 92, y, 58, 20).build());
             }
             y += 24;
         }
 
         if (pages > 1) {
-            addDrawableChild(Button.builder(Component.literal("<"), b -> {
+            addRenderableWidget(Button.builder(Component.literal("<"), b -> {
                 page = Math.max(0, page - 1);
                 refresh();
-            }).dimensions(cx - 130, height - 52, 24, 20).build());
-            addDrawableChild(Button.builder(Component.literal(">"), b -> {
+            }).bounds(cx - 130, height - 52, 24, 20).build());
+            addRenderableWidget(Button.builder(Component.literal(">"), b -> {
                 page = page + 1;
                 refresh();
-            }).dimensions(cx + 106, height - 52, 24, 20).build());
+            }).bounds(cx + 106, height - 52, 24, 20).build());
         }
 
-        addDrawableChild(Button.builder(Component.literal(Lang.t("menu.back")),
-                b -> close()).dimensions(cx - 60, height - 28, 120, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("menu.back")),
+                b -> onClose()).bounds(cx - 60, height - 28, 120, 20).build());
     }
 
     private void refresh() {
-        clearAndInit();
+        rebuildWidgets();
     }
 
     @Override
-    public void render(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
-        super.render(ctx, mouseX, mouseY, delta);
-        ctx.drawCenteredTextWithShadow(textRenderer,
-                Component.literal(Lang.t("friends.title")).formatted(ChatFormatting.BOLD), width / 2, 20, 0xFFFFFF);
+    public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(ctx, mouseX, mouseY, delta);
+        ctx.centeredText(font,
+                Component.literal(Lang.t("friends.title")).withStyle(ChatFormatting.BOLD), width / 2, 20, 0xFFFFFF);
 
         ScreenMineClient mod = ScreenMineClient.get();
         int cx = width / 2;
@@ -146,32 +146,32 @@ public final class MenuFriends extends Screen {
                 color = ChatFormatting.GRAY;
                 suffix = Lang.t("friends.offline");
             }
-            ctx.drawTextWithShadow(textRenderer,
-                    Component.literal(row.name() + suffix).formatted(color), cx - 130, y, 0xFFFFFF);
+            ctx.text(font,
+                    Component.literal(row.name() + suffix).withStyle(color), cx - 130, y, 0xFFFFFF);
             y += 24;
         }
 
         if (rows.isEmpty()) {
-            ctx.drawCenteredTextWithShadow(textRenderer,
+            ctx.centeredText(font,
                     Component.literal(Lang.t("friends.empty"))
-                            .formatted(ChatFormatting.DARK_GRAY),
+                            .withStyle(ChatFormatting.DARK_GRAY),
                     cx, 90, 0xFFFFFF);
         }
         if (!mod.state().requestsOut.isEmpty()) {
-            ctx.drawCenteredTextWithShadow(textRenderer,
+            ctx.centeredText(font,
                     Component.literal(Lang.t("friends.sent", String.join(", ", mod.state().requestsOut)))
-                            .formatted(ChatFormatting.DARK_GRAY),
+                            .withStyle(ChatFormatting.DARK_GRAY),
                     cx, height - 68, 0xFFFFFF);
         }
     }
 
     @Override
-    public void close() {
-        client.setScreen(parent);
+    public void onClose() {
+        minecraft.gui.setScreen(parent);
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 

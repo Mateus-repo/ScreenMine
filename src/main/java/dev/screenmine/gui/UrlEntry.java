@@ -28,23 +28,23 @@ public final class UrlEntry extends Screen {
     @Override
     protected void init() {
         int cx = width / 2;
-        field = new EditBox(textRenderer, cx - 150, height / 2 - 10, 300, 20,
+        field = new EditBox(font, cx - 150, height / 2 - 10, 300, 20,
                 Component.literal("URL"));
         field.setMaxLength(2000);
-        field.setText(initial);
-        addDrawableChild(field);
+        field.setValue(initial);
+        addRenderableWidget(field);
         setInitialFocus(field);
 
-        addDrawableChild(Button.builder(Component.literal(Lang.t("url.open")),
-                b -> accept()).dimensions(cx - 105, height / 2 + 18, 100, 20).build());
-        addDrawableChild(Button.builder(Component.literal(Lang.t("url.cancel")),
-                b -> close()).dimensions(cx + 5, height / 2 + 18, 100, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("url.open")),
+                b -> accept()).bounds(cx - 105, height / 2 + 18, 100, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("url.cancel")),
+                b -> onClose()).bounds(cx + 5, height / 2 + 18, 100, 20).build());
     }
 
     private void accept() {
-        String url = field.getText().trim();
+        String url = field.getValue().trim();
         if (url.isEmpty()) {
-            close();
+            onClose();
             return;
         }
         if (!url.contains("://")) {
@@ -65,20 +65,20 @@ public final class UrlEntry extends Screen {
     }
 
     @Override
-    public void render(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
-        super.render(ctx, mouseX, mouseY, delta);
-        ctx.drawCenteredTextWithShadow(textRenderer,
-                Component.literal(Lang.t("url.hint")).formatted(ChatFormatting.GRAY),
+    public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(ctx, mouseX, mouseY, delta);
+        ctx.centeredText(font,
+                Component.literal(Lang.t("url.hint")).withStyle(ChatFormatting.GRAY),
                 width / 2, height / 2 - 28, 0xFFFFFF);
     }
 
     @Override
-    public void close() {
-        client.setScreen(parent);
+    public void onClose() {
+        minecraft.gui.setScreen(parent);
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 }

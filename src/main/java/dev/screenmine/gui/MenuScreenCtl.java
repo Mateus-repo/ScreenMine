@@ -31,72 +31,72 @@ public final class MenuScreenCtl extends Screen {
         int cx = width / 2;
         int y = height / 2 - 84;
 
-        addDrawableChild(Button.builder(Component.literal(Lang.t("ctl.take")), b -> {
-            client.setScreen(null);
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("ctl.take")), b -> {
+            minecraft.gui.setScreen(null);
             if (!ScreenMineClient.get().enterControlMode()) {
                 ScreenMineClient.chat(Component.literal(Lang.t("ctl.aim.again")));
             }
-        }).dimensions(cx - 105, y, 210, 20).build());
+        }).bounds(cx - 105, y, 210, 20).build());
         y += 24;
 
-        addDrawableChild(Button.builder(Component.literal("YouTube"), b -> {
+        addRenderableWidget(Button.builder(Component.literal("YouTube"), b -> {
             mod.navigate(screen.streamId, YOUTUBE);
-            close();
-        }).dimensions(cx - 105, y, 210, 20).build());
+            onClose();
+        }).bounds(cx - 105, y, 210, 20).build());
         y += 24;
 
-        addDrawableChild(Button.builder(Component.literal(Lang.t("ctl.playpause")), b -> {
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("ctl.playpause")), b -> {
             mod.togglePlayPause(screen.streamId);
-        }).dimensions(cx - 105, y, 102, 20).build());
-        addDrawableChild(Button.builder(Component.literal(Lang.t("ctl.browser")), b -> {
-            client.setScreen(new BrowserFullScreen(screen));
-        }).dimensions(cx + 3, y, 102, 20).build());
+        }).bounds(cx - 105, y, 102, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("ctl.browser")), b -> {
+            minecraft.gui.setScreen(new BrowserFullScreen(screen));
+        }).bounds(cx + 3, y, 102, 20).build());
         y += 24;
 
-        addDrawableChild(Button.builder(Component.literal(Lang.t("ctl.back10")), b -> {
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("ctl.back10")), b -> {
             mod.seekBy(screen.streamId, -10);
-        }).dimensions(cx - 105, y, 102, 20).build());
-        addDrawableChild(Button.builder(Component.literal(Lang.t("ctl.fwd10")), b -> {
+        }).bounds(cx - 105, y, 102, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("ctl.fwd10")), b -> {
             mod.seekBy(screen.streamId, 10);
-        }).dimensions(cx + 3, y, 102, 20).build());
+        }).bounds(cx + 3, y, 102, 20).build());
         y += 24;
 
-        addDrawableChild(Button.builder(Component.literal(Lang.t("ctl.url")), b ->
-                client.setScreen(new UrlEntry(screen.browser.url(), url -> {
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("ctl.url")), b ->
+                minecraft.gui.setScreen(new UrlEntry(screen.browser.url(), url -> {
                     mod.navigate(screen.streamId, url);
-                    client.setScreen(null);
-                }, this))).dimensions(cx - 105, y, 210, 20).build());
+                    minecraft.gui.setScreen(null);
+                }, this))).bounds(cx - 105, y, 210, 20).build());
         y += 24;
 
-        addDrawableChild(Button.builder(Component.literal(Lang.t("ctl.smaller")), b ->
-                screen.resizeBy(-0.5f)).dimensions(cx - 105, y, 68, 20).build());
-        addDrawableChild(Button.builder(Component.literal(Lang.t("ctl.move")), b -> {
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("ctl.smaller")), b ->
+                screen.resizeBy(-0.5f)).bounds(cx - 105, y, 68, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("ctl.move")), b -> {
             screen.moving = !screen.moving;
-            client.setScreen(null);
-        }).dimensions(cx - 33, y, 66, 20).build());
-        addDrawableChild(Button.builder(Component.literal(Lang.t("ctl.bigger")), b ->
-                screen.resizeBy(0.5f)).dimensions(cx + 37, y, 68, 20).build());
+            minecraft.gui.setScreen(null);
+        }).bounds(cx - 33, y, 66, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("ctl.bigger")), b ->
+                screen.resizeBy(0.5f)).bounds(cx + 37, y, 68, 20).build());
         y += 24;
 
-        addDrawableChild(Button.builder(Component.literal(Lang.t("ctl.quieter")), b -> {
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("ctl.quieter")), b -> {
             screen.volumeBy(-Cfg.VOLUME_STEP);
-            clearAndInit();
-        }).dimensions(cx - 105, y, 68, 20).build());
-        addDrawableChild(Button.builder(
+            rebuildWidgets();
+        }).bounds(cx - 105, y, 68, 20).build());
+        addRenderableWidget(Button.builder(
                 Component.literal(Lang.t(screen.muted ? "ctl.unmute" : "ctl.mute")), b -> {
                     screen.muted = !screen.muted;
-                    clearAndInit();
-                }).dimensions(cx - 33, y, 66, 20).build());
-        addDrawableChild(Button.builder(Component.literal(Lang.t("ctl.louder")), b -> {
+                    rebuildWidgets();
+                }).bounds(cx - 33, y, 66, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("ctl.louder")), b -> {
             screen.volumeBy(Cfg.VOLUME_STEP);
-            clearAndInit();
-        }).dimensions(cx + 37, y, 68, 20).build());
+            rebuildWidgets();
+        }).bounds(cx + 37, y, 68, 20).build());
         y += 24;
 
-        addDrawableChild(Button.builder(Component.literal(Lang.t("ctl.detach")), b -> {
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("ctl.detach")), b -> {
             mod.disconnectFrom(screen.streamId);
-            client.setScreen(null);
-        }).dimensions(cx - 105, y, 102, 20).build());
+            minecraft.gui.setScreen(null);
+        }).bounds(cx - 105, y, 102, 20).build());
 
         StreamInfo info = mod.state().streams.get(screen.streamId);
         boolean canDelete = info == null
@@ -104,36 +104,36 @@ public final class MenuScreenCtl extends Screen {
                             || mod.state().isHost();
         Button del = Button.builder(Component.literal(Lang.t("ctl.delete")), b -> {
             mod.removeScreen(screen.streamId);
-            client.setScreen(null);
-        }).dimensions(cx + 3, y, 102, 20).build();
+            minecraft.gui.setScreen(null);
+        }).bounds(cx + 3, y, 102, 20).build();
         del.active = canDelete;
-        addDrawableChild(del);
+        addRenderableWidget(del);
         y += 24;
 
-        addDrawableChild(Button.builder(Component.literal(Lang.t("menu.back")),
-                b -> close()).dimensions(cx - 60, y, 120, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("menu.back")),
+                b -> onClose()).bounds(cx - 60, y, 120, 20).build());
     }
 
     @Override
-    public void render(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
-        super.render(ctx, mouseX, mouseY, delta);
+    public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(ctx, mouseX, mouseY, delta);
         ScreenMineClient mod = ScreenMineClient.get();
         StreamInfo info = mod.state().streams.get(screen.streamId);
         String title = info != null ? info.displayName() : screen.browser.pageTitle();
 
-        ctx.drawCenteredTextWithShadow(textRenderer,
-                Component.literal(title.isEmpty() ? Lang.t("ctl.screen") : title).formatted(ChatFormatting.BOLD),
+        ctx.centeredText(font,
+                Component.literal(title.isEmpty() ? Lang.t("ctl.screen") : title).withStyle(ChatFormatting.BOLD),
                 width / 2, height / 2 - 108, 0xFFFFFF);
-        ctx.drawCenteredTextWithShadow(textRenderer,
-                Component.literal(shortUrl(screen.browser.url())).formatted(ChatFormatting.DARK_GRAY),
+        ctx.centeredText(font,
+                Component.literal(shortUrl(screen.browser.url())).withStyle(ChatFormatting.DARK_GRAY),
                 width / 2, height / 2 - 96, 0xFFFFFF);
 
         String vol = screen.muted ? Lang.t("ctl.sound.off") : Lang.t("ctl.sound", screen.volume);
         String size = Lang.t("ctl.status", screen.width,
                 Lang.t(screen.browser.playbackPaused() ? "ctl.paused" : "ctl.playing"),
                 vol, Cfg.AUDIO_FAR);
-        ctx.drawCenteredTextWithShadow(textRenderer,
-                Component.literal(size).formatted(ChatFormatting.GRAY),
+        ctx.centeredText(font,
+                Component.literal(size).withStyle(ChatFormatting.GRAY),
                 width / 2, height - 30, 0xFFFFFF);
     }
 
@@ -145,12 +145,12 @@ public final class MenuScreenCtl extends Screen {
     }
 
     @Override
-    public void close() {
-        client.setScreen(parent);
+    public void onClose() {
+        minecraft.gui.setScreen(parent);
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 }

@@ -31,33 +31,33 @@ public final class MenuInvites extends Screen {
         int cx = width / 2;
         int y = 56;
         for (String host : shown) {
-            addDrawableChild(Button.builder(Component.literal(Lang.t("invites.join")), b -> {
+            addRenderableWidget(Button.builder(Component.literal(Lang.t("invites.join")), b -> {
                 mod.net().send(Packets.inviteAccept(host));
-                client.setScreen(new MenuJoinChoice(host, parent));
-            }).dimensions(cx + 4, y, 96, 20).build());
-            addDrawableChild(Button.builder(Component.literal(Lang.t("friends.decline")), b -> {
+                minecraft.gui.setScreen(new MenuJoinChoice(host, parent));
+            }).bounds(cx + 4, y, 96, 20).build());
+            addRenderableWidget(Button.builder(Component.literal(Lang.t("friends.decline")), b -> {
                 mod.net().send(Packets.inviteDecline(host));
-                clearAndInit();
-            }).dimensions(cx + 104, y, 76, 20).build());
+                rebuildWidgets();
+            }).bounds(cx + 104, y, 76, 20).build());
             y += 24;
         }
 
-        addDrawableChild(Button.builder(Component.literal(Lang.t("menu.back")),
-                b -> close()).dimensions(cx - 60, height - 28, 120, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("menu.back")),
+                b -> onClose()).bounds(cx - 60, height - 28, 120, 20).build());
     }
 
     @Override
-    public void render(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
-        super.render(ctx, mouseX, mouseY, delta);
-        ctx.drawCenteredTextWithShadow(textRenderer,
-                Component.literal(Lang.t("invites.title")).formatted(ChatFormatting.BOLD), width / 2, 24, 0xFFFFFF);
+    public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(ctx, mouseX, mouseY, delta);
+        ctx.centeredText(font,
+                Component.literal(Lang.t("invites.title")).withStyle(ChatFormatting.BOLD), width / 2, 24, 0xFFFFFF);
 
         ScreenMineClient mod = ScreenMineClient.get();
         int cx = width / 2;
         int y = 58;
         for (String host : shown) {
-            ctx.drawTextWithShadow(textRenderer,
-                    Component.literal(Lang.t("invites.calls", host)).formatted(ChatFormatting.GOLD),
+            ctx.text(font,
+                    Component.literal(Lang.t("invites.calls", host)).withStyle(ChatFormatting.GOLD),
                     cx - 180, y, 0xFFFFFF);
             Boolean same = mod.state().serverMatch(host);
             String note;
@@ -73,24 +73,24 @@ public final class MenuInvites extends Screen {
                         dev.screenmine.state.AppState.serverLabel(mod.state().serverOf.get(host)));
                 noteColor = ChatFormatting.RED;
             }
-            ctx.drawTextWithShadow(textRenderer,
-                    Component.literal(note).formatted(noteColor), cx - 180, y + 10, 0xFFFFFF);
+            ctx.text(font,
+                    Component.literal(note).withStyle(noteColor), cx - 180, y + 10, 0xFFFFFF);
             y += 24;
         }
         if (shown.isEmpty()) {
-            ctx.drawCenteredTextWithShadow(textRenderer,
-                    Component.literal(Lang.t("invites.none")).formatted(ChatFormatting.DARK_GRAY),
+            ctx.centeredText(font,
+                    Component.literal(Lang.t("invites.none")).withStyle(ChatFormatting.DARK_GRAY),
                     cx, 62, 0xFFFFFF);
         }
     }
 
     @Override
-    public void close() {
-        client.setScreen(parent);
+    public void onClose() {
+        minecraft.gui.setScreen(parent);
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 }

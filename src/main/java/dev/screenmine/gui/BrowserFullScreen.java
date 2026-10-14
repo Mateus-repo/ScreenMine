@@ -76,7 +76,7 @@ public final class BrowserFullScreen extends Screen {
 
         if (!screen.browser.ensureCreated() || !screen.browser.ready()) {
             ctx.drawCenteredTextWithShadow(textRenderer,
-                    Component.literal(Lang.t("browser.starting")).formatted(ChatFormatting.GRAY),
+                    Component.literal(Lang.t("browser.starting")).withStyle(ChatFormatting.GRAY),
                     width / 2, height / 2, 0xFFFFFF);
             return;
         }
@@ -105,7 +105,7 @@ public final class BrowserFullScreen extends Screen {
 
         ctx.drawCenteredTextWithShadow(textRenderer,
                 Component.literal(Lang.t("browser.close.hint"))
-                        .formatted(ChatFormatting.DARK_GRAY),
+                        .withStyle(ChatFormatting.DARK_GRAY),
                 width / 2, height - 12, 0xFFFFFF);
     }
 

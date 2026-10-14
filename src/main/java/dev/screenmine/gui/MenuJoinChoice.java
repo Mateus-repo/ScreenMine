@@ -62,18 +62,18 @@ public final class MenuJoinChoice extends Screen {
         }
 
         addDrawableChild(Button.builder(Component.literal(Lang.t("invites.later")),
-                b -> close()).dimensions(cx - 60, height - 32, 120, 20).build());
+                b -> onClose()).dimensions(cx - 60, height - 32, 120, 20).build());
     }
 
     @Override
     public void render(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
         super.render(ctx, mouseX, mouseY, delta);
         ctx.drawCenteredTextWithShadow(textRenderer,
-                Component.literal(Lang.t("join.in.session", host)).formatted(ChatFormatting.BOLD),
+                Component.literal(Lang.t("join.in.session", host)).withStyle(ChatFormatting.BOLD),
                 width / 2, height / 2 - 70, 0xFFFFFF);
         ctx.drawCenteredTextWithShadow(textRenderer,
                 Component.literal(Lang.t("join.hint"))
-                        .formatted(ChatFormatting.GRAY),
+                        .withStyle(ChatFormatting.GRAY),
                 width / 2, height / 2 - 58, 0xFFFFFF);
     }
 

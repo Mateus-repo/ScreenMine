@@ -32,49 +32,49 @@ public final class MenuStreams extends Screen {
         int y = 56;
         for (StreamInfo info : shown) {
             boolean attached = mod.world().has(info.id);
-            addDrawableChild(Button.builder(
+            addRenderableWidget(Button.builder(
                     Component.literal(Lang.t(attached ? "streams.detach" : "streams.connect")), b -> {
                         if (attached) {
                             mod.disconnectFrom(info.id);
                         } else {
                             mod.connectTo(info.id);
                         }
-                        clearAndInit();
-                    }).dimensions(cx + 10, y, 100, 20).build());
+                        rebuildWidgets();
+                    }).bounds(cx + 10, y, 100, 20).build());
 
             boolean canDelete = info.owner.equals(mod.state().you) || mod.state().isHost();
             Button del = Button.builder(Component.literal(Lang.t("friends.remove")), b -> {
                 mod.removeScreen(info.id);
-                clearAndInit();
-            }).dimensions(cx + 114, y, 66, 20).build();
+                rebuildWidgets();
+            }).bounds(cx + 114, y, 66, 20).build();
             del.active = canDelete;
-            addDrawableChild(del);
+            addRenderableWidget(del);
             y += 24;
             if (y > height - 70) {
                 break;
             }
         }
 
-        addDrawableChild(Button.builder(Component.literal(Lang.t("menu.back")),
-                b -> close()).dimensions(cx - 60, height - 28, 120, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("menu.back")),
+                b -> onClose()).bounds(cx - 60, height - 28, 120, 20).build());
     }
 
     @Override
-    public void render(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
-        super.render(ctx, mouseX, mouseY, delta);
+    public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(ctx, mouseX, mouseY, delta);
         ScreenMineClient mod = ScreenMineClient.get();
-        ctx.drawCenteredTextWithShadow(textRenderer,
-                Component.literal(Lang.t("streams.title")).formatted(ChatFormatting.BOLD), width / 2, 24, 0xFFFFFF);
+        ctx.centeredText(font,
+                Component.literal(Lang.t("streams.title")).withStyle(ChatFormatting.BOLD), width / 2, 24, 0xFFFFFF);
 
         int cx = width / 2;
         int y = 62;
         for (StreamInfo info : shown) {
             String state = Lang.t(mod.world().has(info.id) ? "streams.mine" : "streams.not.connected");
-            ctx.drawTextWithShadow(textRenderer,
-                    Component.literal(info.displayName()).formatted(ChatFormatting.WHITE),
+            ctx.text(font,
+                    Component.literal(info.displayName()).withStyle(ChatFormatting.WHITE),
                     cx - 180, y - 4, 0xFFFFFF);
-            ctx.drawTextWithShadow(textRenderer,
-                    Component.literal(info.owner + " · " + state).formatted(ChatFormatting.DARK_GRAY),
+            ctx.text(font,
+                    Component.literal(info.owner + " · " + state).withStyle(ChatFormatting.DARK_GRAY),
                     cx - 180, y + 6, 0xFFFFFF);
             y += 24;
             if (y > height - 70) {
@@ -82,19 +82,19 @@ public final class MenuStreams extends Screen {
             }
         }
         if (shown.isEmpty()) {
-            ctx.drawCenteredTextWithShadow(textRenderer,
-                    Component.literal(Lang.t("streams.empty")).formatted(ChatFormatting.DARK_GRAY),
+            ctx.centeredText(font,
+                    Component.literal(Lang.t("streams.empty")).withStyle(ChatFormatting.DARK_GRAY),
                     cx, 62, 0xFFFFFF);
         }
     }
 
     @Override
-    public void close() {
-        client.setScreen(parent);
+    public void onClose() {
+        minecraft.gui.setScreen(parent);
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 }

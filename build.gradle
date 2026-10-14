@@ -57,6 +57,8 @@ processResources {
 tasks.withType(JavaCompile).configureEach {
     it.options.encoding = 'UTF-8'
     it.options.release = 25
+    // Deixar o javac reportar tudo, nao so os primeiros 100.
+    it.options.compilerArgs << '-Xmaxerrs' << '1000'
 }
 
 java {

@@ -3,6 +3,7 @@ package dev.screenmine.gui;
 import dev.screenmine.Lang;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.network.chat.Component;
@@ -56,14 +57,16 @@ public final class UrlEntry extends Screen {
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == 257 || keyCode == 335) {   // enter / numpad enter
+    public boolean keyPressed(KeyEvent event) {
+        // Enter or numpad enter. Uses the vanilla helper rather than a hardcoded
+        // key code: the 26.3 backend is SDL and hardcoding is explicitly warned
+        // against.
+        if (event.isConfirmation()) {
             accept();
             return true;
         }
-        return super.keyPressed(keyCode, scanCode, modifiers);
+        return super.keyPressed(event);
     }
-
     @Override
     public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
         super.extractRenderState(ctx, mouseX, mouseY, delta);

@@ -25,10 +25,14 @@ public final class MenuJoinChoice extends Screen {
         this.parent = parent;
     }
 
-    /** Widened so the session update can refresh this screen live. */
+    /** So the session update can refresh this screen live. */
     @Override
-    public void clearAndInit() {
-        super.clearAndInit();
+    protected void rebuildWidgets() {
+        super.rebuildWidgets();
+    }
+    /** Public entry point; {@code rebuildWidgets} is protected in 26.3. */
+    public void refresh() {
+        rebuildWidgets();
     }
 
     @Override
@@ -37,11 +41,11 @@ public final class MenuJoinChoice extends Screen {
         int cx = width / 2;
         int y = height / 2 - 40;
 
-        addDrawableChild(Button.builder(
+        addRenderableWidget(Button.builder(
                 Component.literal(Lang.t("join.spawn")), b -> {
                     mod.spawnScreen(Cfg.DEFAULT_URL);
-                    client.setScreen(null);
-                }).dimensions(cx - 110, y, 220, 20).build());
+                    minecraft.gui.setScreen(null);
+                }).bounds(cx - 110, y, 220, 20).build());
         y += 24;
 
         int hooked = 0;
@@ -49,11 +53,11 @@ public final class MenuJoinChoice extends Screen {
             if (info.owner.equals(mod.state().you)) {
                 continue;
             }
-            addDrawableChild(Button.builder(
+            addRenderableWidget(Button.builder(
                     Component.literal(Lang.t("join.connect", info.displayName())), b -> {
                         mod.connectTo(info.id);
-                        client.setScreen(null);
-                    }).dimensions(cx - 110, y, 220, 20).build());
+                        minecraft.gui.setScreen(null);
+                    }).bounds(cx - 110, y, 220, 20).build());
             y += 24;
             hooked++;
             if (hooked >= 5) {
@@ -61,29 +65,29 @@ public final class MenuJoinChoice extends Screen {
             }
         }
 
-        addDrawableChild(Button.builder(Component.literal(Lang.t("invites.later")),
-                b -> onClose()).dimensions(cx - 60, height - 32, 120, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(Lang.t("invites.later")),
+                b -> onClose()).bounds(cx - 60, height - 32, 120, 20).build());
     }
 
     @Override
-    public void render(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
-        super.render(ctx, mouseX, mouseY, delta);
-        ctx.drawCenteredTextWithShadow(textRenderer,
+    public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(ctx, mouseX, mouseY, delta);
+        ctx.centeredText(font,
                 Component.literal(Lang.t("join.in.session", host)).withStyle(ChatFormatting.BOLD),
                 width / 2, height / 2 - 70, 0xFFFFFF);
-        ctx.drawCenteredTextWithShadow(textRenderer,
+        ctx.centeredText(font,
                 Component.literal(Lang.t("join.hint"))
                         .withStyle(ChatFormatting.GRAY),
                 width / 2, height / 2 - 58, 0xFFFFFF);
     }
 
     @Override
-    public void close() {
-        client.setScreen(parent);
+    public void onClose() {
+        minecraft.gui.setScreen(parent);
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 }

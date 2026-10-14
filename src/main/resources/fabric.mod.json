@@ -11,7 +11,7 @@
   "environment": "client",
   "entrypoints": {
     "client": [
-      "dev.screenmine.spike.SpikeClient"
+      "dev.screenmine.spike.SpikeBrowserClient"
     ]
   },
   "depends": {

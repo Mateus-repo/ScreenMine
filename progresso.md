@@ -1,34 +1,154 @@
-# progresso.md — [NOME_DO_MOD] → Minecraft [VERSÃO_DESTINO]
+# progresso.md — ScreenMine · 1.21.4 → 26.3
 
 _Atualiza no fim de cada passo. Mantém curto e factual._
 
+> Este é o **único** documento de estado do port. O antigo `PORTING-26.3.md`
+> foi absorvido aqui e apagado, porque um segundo documento de plano passa a ser
+> lido como fonte de verdade e tinha nomes ainda por confirmar.
+
 ## Estado atual
-- **Fase:** 0 — Reconhecimento
-- **Compila?** não testado
-- **Corre no jogo?** não testado
-- **Último commit:** —
+- **Fase:** 3 — Spikes (spike de render world-space ainda por fazer)
+- **Compila?** Não — 200 erros, todos estruturais (nomes já migrados)
+- **Corre no jogo?** Não testado
+- **Último commit:** `e9c2594` — build, identidade, rename mecânico, browser
 
 ## Fases
-- [ ] 0. Reconhecimento (ler o mod original, listar APIs usadas, riscos)
-- [ ] 1. Setup de build (Gradle/Loom/versões a compilar com um mod vazio)
-- [ ] 2. Dependências confirmadas para a versão destino
-- [ ] 3. Spike das partes de maior risco
-- [ ] 4. Migração do código (por ficheiro, a compilar sempre)
-- [ ] 5. Mixins / render / input
-- [ ] 6. Teste no cliente (+ servidor se aplicável)
-- [ ] 7. Polimento e release
+- [x] 0. Reconhecimento
+- [x] 1. Build a compilar contra MC 26.3 real
+- [x] 2. Dependências confirmadas (mcef-modern substitui MCEF)
+- [ ] 3. **Spike de render world-space** ← próximo passo
+- [ ] 4. Migração GUI (9 ecrãs, ~120 dos 200 erros)
+- [ ] 5. Input (SDL3 / mixins)
+- [ ] 6. Render completo
+- [ ] 7. Teste no cliente
+- [ ] 8. Polimento e release
+
+## Estado do código
+22 ficheiros Java, ~4024 linhas (antes do rename).
+`BrowserInstance.java` compila limpo. Restam 4 áreas com erros:
+
+| Ficheiro | Erros | Área |
+|---|---|---|
+| `BrowserFullScreen` + `MenuFriends` | ~120 | GUI: `render` → `extractRenderState`; input por records |
+| `ScreenMineClient` | 38 | Input; 8 são `org.lwjgl.glfw` (não existe) |
+| `ScreenWorld`, `PlacedScreen`, `WorldScreenRenderer`, `Hud` | 24 | Render: reescrita |
 
 ## Riscos conhecidos
 | Risco | Estado | Notas |
 |---|---|---|
-| (exemplo) Render mudou | por verificar | |
+| Desenhar quad com textura própria no mundo | **por provar** | É o spike. Sem isto o mod não cumpre a função principal. |
+| Scroll/teclas no mundo em SDL3 | por resolver | Não há evento Fabric. Planeado: mixins em `MouseHandler`/`KeyboardHandler`. |
+| Ordem de desenho vs. nuvens | aceite | `WorldRenderEvents.LAST` não existe. `LevelRenderEvents.END_MAIN` corre **antes** das nuvens. Regressão a registar. |
+| `mcef-modern` bloqueia a render thread | por testar | `getInstance()` bloqueia; usamos `initialize().isDone()`. Falta confirmar em `runClient`. |
+| Chromium download no 1.º arranque | por testar | O placeholder cinzento tem de desaparecer sozinho. |
+| Licença | por resolver | CoScreen é **AGPL-3.0**, ScreenMine é **MIT**. Confirmar titularidade antes de publicar e dar crédito. |
+| Nomes de API ainda em fluxo | menor | `LevelRenderEvents` foi renomeado nos 26.x e os docs ainda migravam no lançamento. |
 
 ## Decisões tomadas
-- (data) decisão — motivo
+- (2026-10-14) **Renomear CoScreen → ScreenMine por inteiro** — mod id, pacote
+  `dev.screenmine`, namespace de assets, config, agente JS. O repo chama-se
+  ScreenMine e a licença é MIT (c) Mateus.
+- (2026-10-14) **ScreenMine é só 26.3.** O CoScreen 1.21.4 fica intacto como
+  referência. Suportar as duas versões no mesmo código é inviável: a 26.3 removeu
+  Yarn, GLFW e o `RenderSystem` antigo.
+- (2026-10-14) **MCEF do CinemaMod está morto** → `mcef-modern` (DimasKama).
+  O upstream acaba em `2.1.6-1.21.4` e usa `org.lwjgl.glfw`, que não existe na 26.3.
+  O maintainer autorizou forks.
+- (2026-10-14) **Spike de render antes da GUI.** A GUI são ~120 erros mecânicos;
+  se o render world-space não for possível, esse trabalho era perdido. Render
+  primeiro, mesmo custando mais.
+- (2026-10-14) **Input via mixins, não `Screen` transparente.** `ScreenKeyboardEvents`
+  é a API suportada, mas abrir um `Screen` mata o input de movimento — e o
+  requisito é "o WASD continua a andar enquanto se vê". Exige infraestrutura nova
+  (mixin config; o projeto não tinha nenhum).
 
-## Descobertas (APIs que mudaram)
-| Antes | Agora | Notas |
-|---|---|---|
+## Descobertas (APIs que mudaram) — todas confirmadas com `javap` no jar 26.3
+Jar usado: `.gradle/loom-cache/minecraftMaven/net/minecraft/minecraft-merged-7e9a32a5b8/26.3/minecraft-merged-7e9a32a5b8-26.3.jar`
+
+### Toolchain
+| Antes | Agora |
+|---|---|
+| Loom `fabric-loom` 1.9.2 (remapeava) | `net.fabricmc.fabric-loom` 1.18-SNAPSHOT (não remapeia) |
+| Yarn `1.21.4+build.8:v2` | **nenhum** — o jar já vem com os nomes Mojang |
+| Gradle 8.14.2 | 9.7.1 |
+| Java 21 | **25** |
+| `modImplementation` | `implementation` |
+| `remapJar` | `jar` |
+
+### Classes
+| Antes (Yarn) | Agora (26.3) |
+|---|---|
+| `MinecraftClient` | `net.minecraft.client.Minecraft` |
+| `Vec3d` | `net.minecraft.world.phys.Vec3` |
+| `MatrixStack` | `com.mojang.blaze3d.vertex.PoseStack` |
+| `RotationAxis` | `com.mojang.math.Axis` (`Axis.YP`, etc.) |
+| `Text` | `net.minecraft.network.chat.Component` |
+| `Formatting` | `net.minecraft.ChatFormatting` |
+| `SoundCategory` | `net.minecraft.sounds.SoundSource` |
+| `InputUtil` | `com.mojang.blaze3d.platform.InputConstants` |
+| `InputUtil.Type.KEYSYM` | `InputConstants.Type.KEYBOARD` |
+| `KeyBinding` | `net.minecraft.client.KeyMapping` |
+| `KeyBindingHelper` | `net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper` |
+| `DrawContext` | `net.minecraft.client.gui.GuiGraphicsExtractor` |
+| `ButtonWidget` / `TextFieldWidget` | `gui.components.Button` / `gui.components.EditBox` |
+| `Screen` | `net.minecraft.client.gui.screens.Screen` |
+| `ServerInfo` | `net.minecraft.server.ServerInfo` (**saiu de `client.*`**) |
+| `Entity` | `net.minecraft.world.entity.Entity` |
+| `ChatHud` | `gui.components.ChatComponent` |
+| `Tessellator` / `BufferRenderer` | **não existem** (0 ocorrências no jar) |
+| `ShaderProgramKeys` | `net.minecraft.client.renderer.RenderPipelines` |
+
+### Métodos
+| Antes | Agora |
+|---|---|
+| `Entity.getEyePos()` | `getEyePosition()` |
+| `Entity.getRotationVector()` | ⚠️ **devolve `Vec2` (pitch/yaw), NÃO uma direção.** Usar `getLookAngle()`. Não renomear em bloco. |
+| `World.getRegistryKey()` | `Level.dimension()` |
+| `Options.getSoundVolume(S)` | `getFinalSoundSourceVolume(S)` |
+| `KeyBinding.wasPressed()` | `KeyMapping.consumeClick()` |
+| `KeyBinding.getBoundKeyLocalizedText()` | `KeyMapping.getTranslatedKeyMessage()` |
+| `Minecraft.setScreen(s)` | ⚠️ **não existe.** É `Minecraft.gui.setScreen(s)`; `Minecraft.gui.hud` é um campo |
+| `Screen.render(DrawContext,…)` | `Screen.extractRenderState(GuiGraphicsExtractor,…)` |
+| `Screen.close()` | `Screen.onClose()` |
+| `Screen` input (params soltos) | records: `KeyEvent`, `MouseButtonEvent`, `CharacterEvent` |
+
+### Render (a reconstruir)
+- `RenderSystem.setShader` / `setShaderTexture` / `disableBlend` / `depthMask` /
+  `disableCull` — **todos removidos**. O estado passou para `RenderPipeline` /
+  `RenderSetup` (`com.mojang.renderpearl`).
+- `WorldRenderEvents.LAST` → `LevelRenderEvents.END_MAIN`.
+  `LevelRenderContext` perdeu `camera()`; a câmara está em
+  `levelState().cameraRenderState.pos`. O `PoseStack` é `poseStack()`.
+- Caminho de submissão: `SubmitNodeCollector.submitCustomGeometry(PoseStack, RenderType, renderer)`.
+- **`TextureSetup.singleTexture(GpuTextureView, GpuSampler)` existe** — confirmado
+  no testmod do `mcef-modern`. É o que permite ligar a textura do Chromium.
+  Só está demonstrado em caminho **2D/GUI** (`BlitRenderState` + `RenderPipelines.GUI_TEXTURED`).
+  A variante **world-space** é a incógnita do spike.
+
+### Browser — mcef-modern
+- `MCEFApi.getInstance()` **bloqueia**; `initialize().isDone()` / `getInstanceFuture()` não.
+- `createBrowser(url, transparent)` — sem dimensões; depois `resize(w, h)`.
+- Input: `onMouseClicked(MouseButtonEvent, boolean)`, `onMouseScrolled(int,int,double)`,
+  `onKeyPressed(KeyEvent)`, `onCharTyped(CharacterEvent)`, …
+- Textura: `getTextureView()` → `GpuTextureView` (não há mais id GL inteiro).
+- **A wrapper não expõe** `executeJavaScript`, `loadURL`, `reload`, `goBack`, `getURL`.
+  Tudo isso via `browser.getCefBrowser()` (verificado: o `CefBrowser` tem todos).
+- Mod id do dependente é **`mcef-modern`**, não `mcef`.
+- Embute `jcef-api` + `jcefmaven` com `include()`, logo não os gerimos à mão.
+
+## Perguntas em aberto (responder com o spike / `runClient`)
+1. Existe um `RenderSetup` / estado de render **world-space** que aceite um
+   `TextureSetup` (e não um `Identifier`)? Se não, plano B é `FeatureRenderer`
+   próprio via `FeatureRendererRegistry` + `SubmitRenderPhases`.
+2. O `mcef-modern` bloqueia a render thread durante o download do Chromium?
+3. O input via SDL3 chega ao CEF com o comportamento certo (mesmo nome, outra
+   semântica é o risco clássico aqui)?
 
 ## Registo de sessões
-- (data) o que foi feito / o que falta
+- **2026-10-14** — Repo novo `ScreenMine` criado (estava vazio, MIT © Mateus).
+  Copiado o código do CoScreen-main (referência intocada). Identidade renomeada
+  por inteiro. Build migrado para 26.3 (Loom 1.18, Gradle 9.7.1, Java 25, sem
+  mappings). Rename mecânico em 13/22 ficheiros, com mapa de nomes confirmado por
+  `javap` contra o jar real — `getRotationVector()` ficou de fora de propósito.
+  `BrowserInstance` migrado para `mcef-modern` e a compilar. **Falta:** spike de
+  render, GUI, input, render completo. Nada foi testado no jogo ainda.

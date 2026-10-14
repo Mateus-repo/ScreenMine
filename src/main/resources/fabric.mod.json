@@ -5,13 +5,15 @@
   "name": "ScreenMine",
   "description": "A real Chromium browser as a flat screen in the Minecraft world: spawn it, move it, resize it, browse and watch YouTube from inside the game. Client-side, works solo with no server. Watching together with friends is planned for a future release and is not available yet.",
   "authors": [
-    "Ma3stro567"
+    "Mateus"
   ],
+  "contact": {},
+  "license": "AGPL-3.0-only",
   "icon": "assets/screenmine/icon.png",
   "environment": "client",
   "entrypoints": {
     "client": [
-      "dev.screenmine.spike.SpikeClient"
+      "dev.screenmine.ScreenMineClient"
     ]
   },
   "depends": {

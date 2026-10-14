@@ -35,6 +35,26 @@ The port replaces, among other things:
 - CinemaMod MCEF (dead at 1.21.4) with `mcef-modern`
 - the mod, package and asset identities: CoScreen → ScreenMine
 
+## -only vs -or-later
+
+CoScreen does not say. There is no `license` field in its `fabric.mod.json`, no
+licence headers in its sources, and no grant statement anywhere. Its `LICENSE`
+file is the unmodified FSF boilerplate; the word "only" appears there only
+incidentally in the body of the AGPL text and carries no grant meaning.
+
+Because the grant is silent, `AGPL-3.0 section 14` applies: whoever receives the
+work may choose any published version of the licence. So the absence of a
+statement is **not** the same as an `-only` grant, and does not resolve to one.
+
+ScreenMine is therefore released as **`AGPL-3.0-only`** -- a conservative choice
+made by ScreenMine's author, not an interpretation of what CoScreen intended.
+
+To settle it, the question has to go to **Ma3stro567**, who holds the copyright
+to CoScreen. They are the only party who can state the intended grant, and the
+only one who can permit re-licensing ScreenMine under different terms. An issue
+asking the question should be opened on the CoScreen repository; the answer will
+be recorded here.
+
 ## Third-party components
 
 `mcef-modern` (https://github.com/DimasKama/mcef-modern) is licensed

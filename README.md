@@ -1,46 +1,43 @@
-# Kit opencode para portar mods de Minecraft (Fabric)
+# ScreenMine
 
-Pacote com **14 skills**, um **plugin de auto commit/push**, `AGENTS.md`,
-`progresso.md` e `.gitignore`, pensado para portar um mod entre versões do Minecraft.
+A real Chromium browser as a flat screen in the Minecraft world: spawn it, move
+it, resize it, browse and watch YouTube from inside the game. Client-side only,
+works solo with no server.
 
-## Conteúdo
-```
-AGENTS.md                       regras + índice de skills (o opencode lê isto sempre)
-progresso.md                    estado do port (o agente lê e atualiza)
-README.md                       este ficheiro
-.gitignore                      modelo para mods Fabric
-.opencode/plugins/auto-commit.js   commit (e push) automático quando a sessão fica idle
-.opencode/skills/<nome>/SKILL.md   14 skills
-```
+Port of [CoScreen](#credits-and-licence) from Minecraft 1.21.4 to
+**Minecraft 26.3** (Fabric).
 
-## Instalação
-1. Copia **o conteúdo** desta pasta para a raiz do repo do mod (onde está o `build.gradle`).
-2. Se ainda não é repo git: `git init`, e liga ao GitHub com `git remote add origin <url>`.
-3. Edita o `AGENTS.md` e o `progresso.md` e preenche os campos `[ENTRE_PARÊNTESIS]`.
-4. Abre o opencode na raiz do repo.
+> **Work in progress.** The port is still under construction on the `port/26.3`
+> branch. `main` currently carries only a render spike and builds, but is not a
+> usable mod. See [`progresso.md`](progresso.md) for where things stand.
 
-Primeira mensagem sugerida:
-> Lê o AGENTS.md e o progresso.md. Faz a fase 0 (reconhecimento) do port e diz-me os maiores riscos antes de mexeres em código.
+## Requirements
 
-## Auto commit / auto push
-O `auto-commit.js` corre quando a sessão fica parada (`session.idle`):
-- Se houver alterações, faz `git add -A` e `git commit` com prefixo `wip(auto):`.
-- Se existir remote `origin`, faz `git push` (desliga com `OPENCODE_AUTOPUSH=0`).
-- Não faz nada se não houver alterações ou se não for repo git.
+- Minecraft **26.3** ("Wilderness Bound")
+- Fabric Loader 0.19.5+
+- Java **25**
+- Fabric API 0.163.0+26.3
+- [mcef-modern](https://github.com/DimasKama/mcef-modern) 0.3.3+mc26.3 — the
+  embedded Chromium runtime. It downloads Chromium (~200 MB) on first launch, so
+  screens render as grey rectangles until that finishes.
 
-Variáveis de ambiente (opcionais):
-| Variável | Efeito |
-|---|---|
-| `OPENCODE_AUTOPUSH=0` | não faz push |
-| `OPENCODE_AUTOCOMMIT=0` | desliga o auto commit |
+## Credits and licence
 
-A skill `auto-commit` ensina o agente a fazer commits **bons** (mensagens claras,
-um commit por mudança lógica). O plugin é só a rede de segurança.
+ScreenMine is a port of **CoScreen**, authored by **Ma3stro567**, which was
+distributed under the GNU Affero General Public License v3.0. Substantial parts of
+its source were carried over and modified. See [`NOTICE`](NOTICE) for the full
+attribution, the files involved, and the changes made.
 
-## Notas importantes
-- **Pastas:** versões diferentes do opencode aceitam `plugins/` ou `plugin/` e
-  `skills/` ou `skill/`. Se algo não for detetado, renomeia a pasta (singular/plural).
-  Confirma na documentação do opencode da tua versão.
-- O plugin usa `git add -A`: confirma que o `.gitignore` está bom **antes** da primeira sessão.
-- Se o repo for público, não deixes segredos em ficheiros: o auto push envia tudo o que não estiver ignorado.
-- As skills são guias genéricos. Não substituem verificar a API real da versão destino.
+ScreenMine is licensed **AGPL-3.0-only**. Full text in [`LICENSE`](LICENSE).
+
+CoScreen does not state whether its grant was `-only` or `-or-later`: it has no
+licence field in its `fabric.mod.json`, no licence headers in its sources, and no
+grant statement anywhere. Its `LICENSE` is the unmodified FSF boilerplate, where
+`AGPL-3.0 section 14` lets whoever receives the work choose any published version.
+`AGPL-3.0-only` here is a conservative choice made by ScreenMine's author, **not**
+a statement about what CoScreen intended.
+
+Resolving this needs the upstream author. Only **Ma3stro567** can say whether
+CoScreen is `-only` or `-or-later`, and only they can permit re-licensing. Until
+then the ambiguity stands. An issue has been opened on CoScreen asking; the answer
+will be recorded in `NOTICE`.

@@ -7,47 +7,24 @@ _Atualiza no fim de cada passo. Mantém curto e factual._
 > lido como fonte de verdade e tinha nomes ainda por confirmar.
 
 ## Estado atual
-- **Fase:** 3 — Spikes ✅ **a incógnita do render world-space está resolvida**
-- **Compila?** Sim, mas só o spike; o resto do código está estacionado em
-  `%TEMP%/opencode/parked/screenmine` e tem de ser reposto
-- **Corre no jogo?** Parcial — browser confirmado em runtime; o quad no mundo
-  ainda não foi visto (falta entrar num mundo)
-- **Último commit:** ver `git log`
-
-> **Contagens de erro: usar sempre `-Xmaxerrs 1000`.** Sem isso o javac pára
-> nos primeiros 100 e todas as estimativas anteriores a este commit estavam
-> truncadas e erradas. Recontagem feita em 2026-10-14 na branch `port/26.3`:
-
-| Ficheiro | Erros | Área |
-|---|---|---|
-| `ScreenMineClient` | **170** | entrypoint: GLFW→SDL, KeyMapping, eventos removidos |
-| `WorldScreenRenderer` | **108** | reescrita do render (Fase 6) |
-| `BrowserFullScreen` | 76 | browser + input por records |
-| `Hud` | 44 | API de texto |
-| `ScreenWorld` | 16 | `Vec3` vs `double` |
-| `PlacedScreen` | 8 | `Vec3` vs `double` |
-| **Total** | **434** | |
-
-Guia já migrado e a compilar: `Cfg`, `Lang`, `Settings`, `BrowserInstance`.
-
-Ordem de ataque (revista em 2026-10-14): `ScreenMineClient` → `Hud`/`ScreenWorld`/
-`PlacedScreen` → `WorldScreenRenderer` → `BrowserFullScreen` por último, porque
-o input SDL3 só se valida em jogo e o build tem de estar verde antes disso.
-
-**Alternativa em avaliação:** branch descartável `spike/browser-input` com um
-entrypoint mínimo, para validar o input→CEF sem migrar os 434 erros.
-`BrowserFullScreen` tem **1 única** chamada ao `ScreenMineClient`
-(`onLocalNavigate`, L207), por isso o acoplamento é pequeno e a via compensa.
+- **Fase:** 7 — Teste no cliente. **O port completo compila.**
+- **Compila?** Sim. "BUILD SUCCESSFUL", 0 erros, 0 avisos.
+- **Branch de trabalho:** `port/26.3`. A `main` e so o spike de render.
+- **Corre no jogo?** O browser, o overlay e o input foram validados em jogo em
+  2026-10-15. **Falta testar o port completo**, que nunca foi corrido.
+- **Falta uma funcionalidade:** o roubo de input no mundo (roda/teclas em control
+  mode) precisa de mixins. Ver "Funcionalidade pendente".
+- **Ultimo commit:** ver git log
 
 ## Fases
 - [x] 0. Reconhecimento
 - [x] 1. Build a compilar contra MC 26.3 real
 - [x] 2. Dependências confirmadas (mcef-modern substitui MCEF)
-- [ ] 3. **Spike de render world-space** ← próximo passo
-- [ ] 4. Migração GUI (9 ecrãs, ~120 dos 200 erros)
-- [ ] 5. Input (SDL3 / mixins)
-- [ ] 6. Render completo
-- [ ] 7. Teste no cliente
+- [x] 3. Spike de render world-space (resolvido e provado em jogo)
+- [x] 4. Migracao GUI (7 dos 8 ecrans; o 8.o e o overlay do browser)
+- [~] 5. Input - overlay validado; falta o roubo no mundo (mixins)
+- [x] 6. Render completo (submit-node collector + BrowserTexture)
+- [ ] 7. Teste no cliente  <- proximo passo
 - [ ] 8. Polimento e release
 
 ## Estado do código
@@ -335,50 +312,134 @@ Para cirugias delicadas, correr com `OPENCODE_AUTOCOMMIT=0`.
   `screen.browser.ensureCreated()`, que e idempotente e distingue os mesmos
   dois estados (Chromium a arrancar vs browser a carregar) sem depender do spike.
 
+
 ## Contagem de erros (medida com `-Xmaxerrs 1000`)
+
+**BUILD SUCCESSFUL. 0 erros, 0 avisos.**
 
 | Momento | Total |
 |---|---|
 | antes de bringr o browser | 434 |
-| depois de bringr o browser | **348** |
+| depois de bringr o browser | 348 |
+| depois de `ScreenMineClient` | 81 |
+| depois de `ScreenWorld` + `PlacedScreen` | 69 |
+| depois de `Hud` | 50 |
+| depois de `WorldScreenRenderer` | **0** |
 
-| Ficheiro | Erros |
-|---|---|
-| `ScreenMineClient.java` | 172 |
-| `WorldScreenRenderer.java` | 108 |
-| `Hud.java` | 44 |
-| `ScreenWorld.java` | 16 |
-| `PlacedScreen.java` | 8 |
+Por ficheiro, ao longo do caminho:
+`ScreenMineClient` 172 -> 0 · `WorldScreenRenderer` 50 -> 0 · `Hud` 19 -> 0 ·
+`ScreenWorld` 8 -> 0 · `PlacedScreen` 4 -> 0
 
-`BrowserFullScreen.java` saiu da lista: migrado e a compilar.
+## API 26.3 confirmada com `javap` (todas verificadas, nenhuma adivinhada)
 
-## Estado do input (validado no jogo, 2026-10-15)
+- `Minecraft`: `getSession().getUsername()` -> `getUser().getName()`;
+  `getCurrentServerEntry()` -> `getCurrentServer()` (`multiplayer.ServerData`,
+  `.address` -> `.ip`); `currentScreen` -> `gui.screen()`; `setScreen` ->
+  `gui.setScreen`; `inGameHud` -> `gui.hud` + `getChat().addClientSystemMessage`;
+  `world` -> `level`; `font`; `mouseHandler`/`keyboardHandler` (public final).
+- `Options`: `attackKey`/`useKey` -> `keyAttack`/`keyUse`;
+  `getFinalSoundSourceVolume` inalterado; **`hudHidden` desapareceu**, sem
+  substituto.
+- `KeyMapping`: construtor com `KeyMapping.Category` (o de `String` foi
+  removido); `setPressed` -> `setDown`; `Category.register(Identifier)`.
+  `Category.label()` deriva `key.category.<ns>.<path>`.
+- Fabric: `KeyMappingHelper.registerKeyBinding` -> **`registerKeyMapping`**.
+- `InputConstants`: `GLFW.GLFW_KEY_*` -> `KEY_*`; `PRESS`/`RELEASE`;
+  `Key.getCode()` -> `getValue()`.
+- `Vec3`: `dotProduct` -> `dot`; `multiply(double)` -> `scale`.
+- `Entity`: `getYaw` -> `getYRot`; `getEyePosition`, `getLookAngle` inalterados.
+- `ResourceKey.identifier()` (nao `location()`), para a dimensao.
+- GUI: `GuiGraphicsExtractor.text(font, ...)` e `centeredText(font, ...)`
+  (esta ultima ja faz sombra sempre); `guiWidth()`/`guiHeight()`.
+- `Component.formatted` -> `withStyle`.
+- Render: `WorldRenderEvents` e `HudRenderCallback` **nao existem** em 26.3.
+  Substitutos: `LevelRenderEvents.END_MAIN` e `HudElementRegistry.addLast(id, el)`.
+- `Window.getHandle()` -> `handle()`; `MouseHandler.isLeftPressed()/isRightPressed()`.
 
-Validado no perfil do Modrinth, num mundo real, com pagina desenhada:
-clicar ✅ · escrever texto ✅ · scroll ✅ · Shift ✅ · teclas ✅
-**Backspace ❌** - limitacao conhecida do JCEF OSR (nunca entrega
-`KEYEVENT_KEYDOWN`). Contornado com um shim JS (`__smEdit`), que **nao esta
-validado**: o agente que o injecta so corre em `onLoadEnd`, e essa callback
-nao dispara para paginas `data:`. Ha um fallback (`pumpAgent`) para injectar
-o agente por retentativa; falta confirmar no log que dispara.
+## Render no mundo (resolvido, o unico bloco grande)
 
-- JCEF descarregado correctamente: 352,3 MB no perfil do Modrinth, identico ao
-  do `run/`. **Nao e problema de download.** `MCEF ready=true`.
-- Chromium so recusa `data:` quando e a *pagina* a navegar. Passar a URL ao
-  `createBrowser` e permitido e foi o que funcionou. Uma alteracao para
-  `about:blank` + injecao partiu isso e foi revertida (commit `d88782b`).
+`Tessellator`, `BufferBuilder` e `BufferRenderer` foram **eliminados** em 26.3, e
+o estado de render saiu do `RenderSystem`. Nao dava para portar linha a linha.
+
+A via que funciona, toda ela API publica, sem mixins nem access widener:
+1. `BrowserTexture extends AbstractTexture` devolve o `GpuTextureView` vivo do
+   browser. Registado com `TextureManager.register(Identifier, ...)`, porque os
+   fabricos de `RenderTypes` so aceitam um id.
+2. A geometria vai pelo `ctx.submitNodeCollector().submitCustomGeometry(...)` do
+   `LevelRenderContext`.
+3. `close()` do `BrowserTexture` fica vazio de proposito: o default fecharia um
+   `GpuTexture` que pertence ao browser.
+
+Isto veio do spike de render, onde foi provado em jogo.
+
+## Funcionalidade pendente (TODOs no codigo)
+
+| Onde | O que falta | Porquê |
+|---|---|---|
+| `ScreenMineClient` `installInputHooks` | **Roubo de input no mundo** (roda e teclas) | 1.21.4 encadeava as callbacks de janela do GLFW. Em 26.3 nao ha GLFW (SDL3) e nao existe API publica para interceptar input antes do Minecraft. Precisa de mixins em `KeyboardHandler.keyPress`/`charTyped` e `MouseHandler.onScroll`. Os handlers (`onScroll`/`onKey`/`onChar`) ja estao escritos contra a API do `MCEFBrowser`. **E a unica funcionalidade em falta.** |
+| `WorldScreenRenderer:87` | Picture escurece a noite | `RenderTypes.text` e lightmapped. O spike lista `entityTranslucentEmissive` como alternativa unlit. Decisao visual. |
+| `WorldScreenRenderer:120` | Formato de vertices de `RenderTypes.debugQuads` | Construido por supplier lazy, por isso o `javap` nao confirma. E o que desenha a placa de fundo e a moldura. Se a moldura sair invisivel ou crashar a render thread, e esta a linha. |
+| `ScreenMineClient:108` (aceito) | Desenhar depois das nuvens | `WorldRenderEvents.LAST` nao existe em 26.3. `END_MAIN` e o mais proximo e desenha antes de nuvens e meteoro. Regressao aceite, verificada contra a lista de eventos. |
+
+## Como testar
+
+```
+cd C:\Users\Strefiz\Documents\GitHub\ScreenMine
+.\gradlew.bat runClient
+```
+
+Checklist completa em baixo.
+
+## Checklist de teste (consolidada)
+
+**Ecrã no mundo**
+- [ ] O quad aparece no mundo, virado para o jogador
+- [ ] A imagem nao esta espelhada nem invertida
+- [ ] A placa de fundo e a moldura aparecem
+- [ ] De costas: o quad desaparece ou nao (diz se o cull esta activo)
+- [ ] `/time set midnight`: a imagem ainda se le? (ver `TODO(port)` das 87)
+- [ ] Neve/chuva na tela: a pagina fica coberta (regressao aceite)
+- [ ] Clicar num link dentro do mundo abre o overlay
+
+**Input**
+- [ ] `M` abre o menu, `B` abre o overlay, `C` entra em control mode
+- [ ] No overlay: escrever texto, clicar, scroll, Shift
+- [ ] Backspace apaga (continua por resolver: shim JS, agente so corre se o `pumpAgent` disparar)
+- [ ] Ctrl+V cola
+- [ ] **Control mode:** o rato move/clica no browser; **roda e teclas NAO chegam** (`TODO(port)` dos mixins)
+- [ ] WASD continua a andar enquanto control mode esta ligado
+- [ ] `Esc` sai de control mode e nao abre o menu do jogo
+
+**Conteudo**
+- [ ] YouTube real: `?v=` carrega, play/pause, seek, volume
+- [ ] Mudas de browser: a URL e partilhada com a sessao
+
+**Colocacao**
+- [ ] `G` pega no ecra, 4 cliques WBC numa parede, move-se com a mira
+- [ ] `=`/`-` redimensiona
+
+**Audio**
+- [ ] Volume segue a distancia e o master do Minecraft
+
+**Menus (9 telas)**
+- [ ] Menu principal, amigos, convites, controlos, streams, escolha de join, entrada de URL
+
+**Rede** (precisa de 2 jogadores)
+- [ ] Sincroniza play/pause e a posicao entre os dois
+- [ ] Um ve o ecra do outro
+
+**Baixo nivel**
+- [ ] Build green: `./gradlew.bat build` -> `BUILD SUCCESSFUL`, 0 erros, 0 avisos
+- [ ] `push` da `port/26.3` sem timeout
 
 ## Registo de sessoes
-- **2026-10-14** — Repo novo `ScreenMine` criado (estava vazio, MIT © Mateus).
-  Copiado o código do CoScreen-main (referência intocada). Identidade renomeada
-  por inteiro. Build migrado para 26.3 (Loom 1.18, Gradle 9.7.1, Java 25, sem
-  mappings). Rename mecânico em 13/22 ficheiros, com mapa de nomes confirmado por
-  `javap` contra o jar real — `getRotationVector()` ficou de fora de propósito.
-  `BrowserInstance` migrado para `mcef-modern` e a compilar. **Falta:** spike de
-  render, GUI, input, render completo. Nada foi testado no jogo ainda.
-- **2026-10-15** - Input validado no jogo num mundo real (clicar, escrever,
-  scroll, Shift, teclas; Backspace por resolver). Descoberta critica de topologia:
-  `main` e `spike/browser-input` descendem do commit `b44d94c` que apagou o mod,
-  por isso **fundir qualquer uma na `port/26.3` apagaria 22 ficheiros**. Merge abortado
-  a tempo; o browser migrado foi trazido ficheiro a ficheiro. Erros: 434 -> 348.
-  `BrowserFullScreen` migrado. `ScreenMineClient` (172) e o proximo alvo.
+- **2026-10-15 (tarde)** - **Port completo a compilar.** 434 -> 0 erros, 0 avisos.
+  Ordem: browser da spike -> `ScreenMineClient` (172->0) -> `ScreenWorld` + `PlacedScreen` (12->0)
+  -> `Hud` (19->0) -> `WorldScreenRenderer` (50->0). Render no mundo resolvido pelo
+  caminho do spike (`BrowserTexture` + `TextureManager.register` + `submitCustomGeometry`),
+  so com API publica. **Correcao de uma decisao anterior:** os `lang` precisavam mesmo da
+  chave `key.category.screenmine.main`, porque 26.3 removeu o construtor de `KeyMapping`
+  com `String` - sem isso a aba dos keybinds ficava sem rotulo.
+  **Falta uma funcionalidade:** o roubo de input no mundo (roda/teclas em control mode)
+  precisa de mixins em `KeyboardHandler`/`MouseHandler`, porque nao ha GLFW em 26.3.
+  Tudo o resto esta implementado.

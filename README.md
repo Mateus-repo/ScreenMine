@@ -1,6 +1,7 @@
 # ScreenMine
 
 ![ScreenMine](docs/logo.png)
+
 A real Chromium browser as a flat screen in the Minecraft world: spawn it, move
 it, resize it, browse and watch YouTube from inside the game. Client-side only,
 works solo with no server.

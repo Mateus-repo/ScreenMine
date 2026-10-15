@@ -1,7 +1,7 @@
 package dev.screenmine.browser;
 
+
 import dev.screenmine.Cfg;
-import dev.screenmine.ScreenMineClient;
 import net.dimaskama.mcef.api.MCEFApi;
 import net.dimaskama.mcef.api.MCEFBrowser;
 import org.cef.browser.CefBrowser;
@@ -11,6 +11,8 @@ import org.cef.handler.CefLoadHandlerAdapter;
 
 import com.mojang.renderpearl.api.textures.GpuTextureView;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -23,6 +25,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * That avoids needing a CEF message router.
  */
 public final class BrowserInstance {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger("ScreenMine");
 
     private static final String STATE_PREFIX = "SM|";
 
@@ -40,6 +44,23 @@ public final class BrowserInstance {
             "var h=document.querySelector('h1.ytd-watch-metadata,h1.title');" +
             "if(h&&h.innerText)return h.innerText;return window.__smBase||'';}" +
             "window.__smBase=document.title;" +
+            // --- editing shim -------------------------------------------------
+            // JCEF's OSR path only ever delivers KEY_PRESSED as a RAWKEYDOWN, so
+            // Blink's default editing actions (Backspace, Delete, caret movement)
+            // never fire, even though keydown listeners in the page do see the
+            // event. Known upstream: DimasKama/mcef-modern#4, still open, and PR
+            // #5 explicitly does not fix it. Remove this once that is resolved.
+            "(function(){if(window.__smEdit)return;window.__smEdit=1;" +
+            "function ed(e){var t=e.target;return t&&(t.isContentEditable||t.tagName==='INPUT'||t.tagName==='TEXTAREA');}" +
+            "function set(e,a,b){var t=e.target;try{t.setSelectionRange(a,b);}catch(x){}}" +
+            "document.addEventListener('keydown',function(e){if(!ed(e))return;var t=e.target,s=t.selectionStart,n=t.selectionEnd,v=t.value;" +
+            "if(e.key==='Backspace'){if(s!==n){t.setRangeText('',s,n,'end');}else if(s>0){t.setRangeText('',s-1,s,'end');}e.preventDefault();}" +
+            "else if(e.key==='Delete'){if(s!==n){t.setRangeText('',s,n,'end');}else if(n<v.length){t.setRangeText('',n,n+1,'end');}e.preventDefault();}" +
+            "else if(e.key==='ArrowLeft'){if(s===n&&s>0)set(e,s-1,s-1);e.preventDefault();}" +
+            "else if(e.key==='ArrowRight'){if(s===n&&n<v.length)set(e,n+1,n+1);e.preventDefault();}" +
+            "else if(e.key==='Home'){set(e,0,0);e.preventDefault();}" +
+            "else if(e.key==='End'){set(e,v.length,v.length);e.preventDefault();}" +
+            "t.dispatchEvent(new Event('input',{bubbles:true}));},true);})();" +
             "setInterval(function(){try{" +
             "var all=document.querySelectorAll('video,audio');" +
             "for(var i=0;i<all.length;i++){var e=all[i];" +
@@ -80,6 +101,9 @@ public final class BrowserInstance {
 
     /** Last gain actually pushed into the page, 0..1; -1 means "unknown". */
     private double appliedGain = -1.0;
+    /** Fallback agent injection: frames waited, and whether it already ran. */
+    private int agentTicks;
+    private boolean agentInjected;
 
     public BrowserInstance(String streamId, String url) {
         this.streamId = streamId;
@@ -101,10 +125,30 @@ public final class BrowserInstance {
         if (!MCEFApi.initialize().isDone()) {
             return false;
         }
+        // Create on about:blank, then navigate, so the load and display handlers
+        // are registered before any real page starts loading. Creating straight at
+        // the target URL raced: a fast page (a data: URL, or a cache hit) fired
+        // onLoadEnd before installHandlersOnce had run, so onLoadEnd never fired at
+        // all and the page agent was never injected. That silently killed the
+        // playback tracking and the editing shim.
+        LOGGER.info("CREATE url={} surface={}x{}", currentUrl, surfaceWidth, surfaceHeight);
         browser = MCEFApi.getInstance().createBrowser(currentUrl, false);
         browser.resize(surfaceWidth, surfaceHeight);
         installHandlersOnce(browser.getCefBrowser().getClient());
         LIVE.put(browser.getCefBrowser().getIdentifier(), this);
+        agentInjected = false;
+        agentTicks = 0;
+        if (false) {   // reverted: data: is fine for createBrowser, see git log
+            // Chromium refuses a data: URL as a top-level navigation: onLoadEnd never
+            // fires and the page stays blank. Build it on about:blank instead.
+            String html = currentUrl.substring(currentUrl.indexOf((int) 44) + 1);
+            LOGGER.info("INJECT data-url into about:blank, {} chars", html.length());
+            injectJavaScript("document.open();document.write(decodeURIComponent(STRING))"
+                    .replace("STRING", "\"" + html + "\""));
+        } else if (false) {
+            LOGGER.info("NAVIGATE to {}", currentUrl);
+            browser.getCefBrowser().loadURL(currentUrl);
+        }
         return true;
     }
 
@@ -115,6 +159,23 @@ public final class BrowserInstance {
      */
     private static final Map<Integer, BrowserInstance> LIVE = new ConcurrentHashMap<>();
     private static boolean handlersInstalled;
+
+    /**
+     * Injects the page agent as a fallback. A data: URL finishes loading before the
+     * CEF handlers are registered, so onLoadEnd never fires and the agent — which
+     * carries the editing shim — never runs. Retry once the page has settled.
+     */
+    public void pumpAgent() {
+        if (agentInjected || browser == null) {
+            return;
+        }
+        if (++agentTicks < 40) {
+            return;
+        }
+        agentInjected = true;
+        injectAgent();
+        LOGGER.info("AGENT injected by retry (onLoadEnd never fired)");
+    }
 
     private static BrowserInstance lookup(CefBrowser b) {
         return b == null ? null : LIVE.get(b.getIdentifier());
@@ -131,6 +192,8 @@ public final class BrowserInstance {
             public void onLoadEnd(CefBrowser b, CefFrame frame, int httpStatusCode) {
                 BrowserInstance self = lookup(b);
                 if (self != null) {
+                    LOGGER.info("ONLOADEND status={} url={} textureView={}", httpStatusCode, self.url(), self.textureView() != null);
+                    self.agentInjected = true;
                     self.injectAgent();
                 }
             }
@@ -168,6 +231,14 @@ public final class BrowserInstance {
     /** The raw JCEF browser behind the MCEF Modern wrapper, or null. */
     private CefBrowser cef() {
         return browser == null ? null : browser.getCefBrowser();
+    }
+
+    /** Run JS in the page, ignoring failures. */
+    private void injectJavaScript(String code) {
+        CefBrowser cef = cef();
+        if (cef != null) {
+            cef.executeJavaScript(code, cef.getURL(), 0);
+        }
     }
 
     private void injectAgent() {
@@ -261,12 +332,20 @@ public final class BrowserInstance {
 
     /** Resizes the off-screen surface. Used by the fullscreen browser view. */
     public void resize(int width, int height) {
-        if (width <= 0 || height <= 0 || (width == surfaceWidth && height == surfaceHeight)) {
+        int w0 = surfaceWidth, h0 = surfaceHeight;
+        if (width <= 0 || height <= 0) {
+            LOGGER.warn("REFUSING zero-size resize {}x{} - a browser with no size never paints", width, height);
+            return;
+        }
+        if (width == surfaceWidth && height == surfaceHeight) {
+            // Same size: calling browser.resize anyway makes CEF reload the page,
+            // which threw away the page position every time the overlay closed.
             return;
         }
         surfaceWidth = width;
         surfaceHeight = height;
         if (browser != null) {
+            LOGGER.info("RESIZE {}x{} (was {}x{}) textureView={}", width, height, w0, h0, browser.getTextureView() != null);
             browser.resize(width, height);
         }
     }
@@ -444,7 +523,7 @@ public final class BrowserInstance {
             try {
                 browser.close();
             } catch (Exception ex) {
-                ScreenMineClient.LOG.warn("failed to close browser: {}", ex.toString());
+                LOGGER.warn("failed to close browser: {}", ex.toString());
             }
             browser = null;
         }

@@ -285,20 +285,90 @@ que nomes que ficam iguais mudam de assinatura.
 - `mcef-modern` é LGPL-2.1, mod separado, `compileOnly`. Nenhum código LGPL entra
   no nosso jar. Compatível com AGPL.
 
-## Workflow de branches (decidido 2026-10-14)
-NÃO voltar a apagar código da working tree para "estacionar".
+## Workflow de branches (decidido 2026-10-14, corrigido 2026-10-15)
+NAO voltar a apagar codigo da working tree para "estacionar".
 
-| Branch | Conteúdo | Uso |
+| Branch | Conteudo | Uso |
 |---|---|---|
-| `main` | port completo (25 ficheiros, não compila ainda) | trabalho normal |
-| `spike/render` | só o spike (3 ficheiros, compila) | teste visual do quad em jogo |
+| `port/26.3` | **branch de trabalho**: port completo (25 ficheiros) | migrar ate compilar |
+| `spike/browser-input` | browser migrado + harness de teste | bringr ficheiro a ficheiro |
+| `main` | so o spike de render (3 ficheiros, compila) | nada a bringr |
 
-Trocar: `git checkout spike/render` / `git checkout main`. O `git checkout`
-repõe os ficheiros automaticamente — não há código em `%TEMP%`.
+**Ler a secao "Topologia das branches" abaixo ANTES de qualquer merge.**
 
 Para cirugias delicadas, correr com `OPENCODE_AUTOCOMMIT=0`.
 
-## Registo de sessões
+## Topologia das branches (verificada 2026-10-15) - IMPORTANTE
+
+`git merge` entre estas branches **apaga o mod**. Nao usar.
+
+```
+9f25088  (merge-base: ultimo estado com o mod completo)
+|
++-- dce000f -> f880b00 -> ... -> 4104f22            port/26.3        (7 commits)
+|
++-- b44d94c "chore: keep main in a buildable state"  <-- AQUI o mod foi apagado
+    +-- f11696b -> ... -> a920133                   spike/browser-input (20 commits)
+    +-- fa7f977                                     main
+```
+
+- `b44d94c` removeu os 22 ficheiros do mod, deixando so o spike de render
+  (3 ficheiros `.java`). `main` e `spike/browser-input` descendem dele.
+- `port/26.3` ramificou de `9f25088`, **antes** dessa limpeza, e por isso
+  conserva os 22 ficheiros (25 `.java` contando o pacote `spike/`).
+- Consequencia: `git merge main` na `port/26.3` removeria 22 ficheiros
+  (3137 linhas). `git merge spike/browser-input` faria o mesmo.
+- **Como bring codigo da spike para a port: copiar ficheiro a ficheiro**
+  (`git checkout spike/browser-input -- <ficheiros>`), nunca `git merge`.
+- Tags de segurança: `backup/main-pre` (fa7f977), `backup/port-pre` (4104f22),
+  `backup/spike-input-pre` (a920133).
+
+### Conflitos预期idos ao bringscodigo da spike
+- **Nao** trazer `lang/*.json` da spike: ela mudou para
+  `key.category.screenmine.main` (uma `KeyMapping.Category` object), mas o
+  `ScreenMineClient` por migrar ainda regista keybinds com categoria por
+  string (`key.categories.screenmine`). Trouxe a chave antiga e a tab ficaria
+  sem rotulo.
+- **Nao** trazer `logo/*` nem `icon.png`: a `port/26.3` ja os tem.
+- `BrowserFullScreen` vinha com uma referencia a
+  `dev.screenmine.spike.SpikeBrowserClient.browserReady()`. Substituida por
+  `screen.browser.ensureCreated()`, que e idempotente e distingue os mesmos
+  dois estados (Chromium a arrancar vs browser a carregar) sem depender do spike.
+
+## Contagem de erros (medida com `-Xmaxerrs 1000`)
+
+| Momento | Total |
+|---|---|
+| antes de bringr o browser | 434 |
+| depois de bringr o browser | **348** |
+
+| Ficheiro | Erros |
+|---|---|
+| `ScreenMineClient.java` | 172 |
+| `WorldScreenRenderer.java` | 108 |
+| `Hud.java` | 44 |
+| `ScreenWorld.java` | 16 |
+| `PlacedScreen.java` | 8 |
+
+`BrowserFullScreen.java` saiu da lista: migrado e a compilar.
+
+## Estado do input (validado no jogo, 2026-10-15)
+
+Validado no perfil do Modrinth, num mundo real, com pagina desenhada:
+clicar ✅ · escrever texto ✅ · scroll ✅ · Shift ✅ · teclas ✅
+**Backspace ❌** - limitacao conhecida do JCEF OSR (nunca entrega
+`KEYEVENT_KEYDOWN`). Contornado com um shim JS (`__smEdit`), que **nao esta
+validado**: o agente que o injecta so corre em `onLoadEnd`, e essa callback
+nao dispara para paginas `data:`. Ha um fallback (`pumpAgent`) para injectar
+o agente por retentativa; falta confirmar no log que dispara.
+
+- JCEF descarregado correctamente: 352,3 MB no perfil do Modrinth, identico ao
+  do `run/`. **Nao e problema de download.** `MCEF ready=true`.
+- Chromium so recusa `data:` quando e a *pagina* a navegar. Passar a URL ao
+  `createBrowser` e permitido e foi o que funcionou. Uma alteracao para
+  `about:blank` + injecao partiu isso e foi revertida (commit `d88782b`).
+
+## Registo de sessoes
 - **2026-10-14** — Repo novo `ScreenMine` criado (estava vazio, MIT © Mateus).
   Copiado o código do CoScreen-main (referência intocada). Identidade renomeada
   por inteiro. Build migrado para 26.3 (Loom 1.18, Gradle 9.7.1, Java 25, sem
@@ -306,3 +376,9 @@ Para cirugias delicadas, correr com `OPENCODE_AUTOCOMMIT=0`.
   `javap` contra o jar real — `getRotationVector()` ficou de fora de propósito.
   `BrowserInstance` migrado para `mcef-modern` e a compilar. **Falta:** spike de
   render, GUI, input, render completo. Nada foi testado no jogo ainda.
+- **2026-10-15** - Input validado no jogo num mundo real (clicar, escrever,
+  scroll, Shift, teclas; Backspace por resolver). Descoberta critica de topologia:
+  `main` e `spike/browser-input` descendem do commit `b44d94c` que apagou o mod,
+  por isso **fundir qualquer uma na `port/26.3` apagaria 22 ficheiros**. Merge abortado
+  a tempo; o browser migrado foi trazido ficheiro a ficheiro. Erros: 434 -> 348.
+  `BrowserFullScreen` migrado. `ScreenMineClient` (172) e o proximo alvo.

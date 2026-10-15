@@ -127,6 +127,12 @@ public final class MenuScreenCtl extends Screen {
         ctx.centeredText(font,
                 Component.literal(shortUrl(screen.browser.url())).withStyle(ChatFormatting.DARK_GRAY),
                 width / 2, height / 2 - 96, 0xFFFFFF);
+        // Two screens can show the same page and therefore carry the same title
+        // and address. The id is the only thing that tells them apart, and this
+        // panel is where you decide which one you are about to change.
+        ctx.centeredText(font,
+                Component.literal(screen.streamId).withStyle(ChatFormatting.DARK_GRAY),
+                width / 2, height / 2 - 84, 0xFFFFFF);
 
         String vol = screen.muted ? Lang.t("ctl.sound.off") : Lang.t("ctl.sound", screen.volume);
         String size = Lang.t("ctl.status", screen.width,

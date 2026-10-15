@@ -118,7 +118,9 @@ public final class Lang {
         // menu
         put("menu.title", "ScreenMine", "ScreenMine");
         put("menu.spawn", "Spawn a screen", "Заспавнить экран");
-        put("menu.control", "Screen controls", "Управление экраном");
+        put("menu.screens.none", "— no screens placed —", "— экранов нет —");
+        put("menu.screens.aimed", "  ← aimed", "  ← наведён");
+        put("menu.screens.page", "%d/%d", "%d/%d");
         put("menu.streams", "Session screens (%d)", "Экраны сессии (%d)");
         put("menu.friends", "Friends (%d)", "Друзья (%d)");
         put("menu.friends.pending", "Friends (%d) · %d pending", "Друзья (%d) · заявок: %d");

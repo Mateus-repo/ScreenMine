@@ -90,6 +90,153 @@ O que isso significa, com cuidado:
 
 ---
 
+## 3b. Thread `cinemamod/mcef#28` — lida por inteiro
+
+Link: <https://github.com/cinemamod/mcef/issues/28> ("Add binary patcher system to
+include additional Chrome codecs (AVC/MPEG-4/Widevine)"). **Fechado.**
+
+O que o issue propõe, e porquê:
+
+> For licensing reasons I cannot host the binaries for a build of Chromium with
+> additional codecs. There are royalties for H.264... However, it is possible I can
+> host **binary diffs** between the libre version and the proprietary version. The
+> end user is compiling the final product on their machine.
+
+Mecanismo do autor (`ds58`), em 5 passos: build sem codecs → build com codecs →
+`bsdiff` entre os dois → manifest com hashes por build → upload dos patches para
+o bucket dele. O utilizador final descarrega o JCEF **sem** codecs e aplica os
+patches em cima. Ele diz explicitamente:
+
+> This is also a legally gray area for sure. I'm not a lawyer so don't take this
+> as fact.
+
+### "Irrelevante com MCEF 2.x" — o que significa **de facto**
+
+O comentário que fecha o issue é do próprio autor, 2023-11-08:
+
+> This issue is now irrelevant with MCEF 2.x. The binaries that are included
+> contain the codecs
+
+**Isto NÃO quer dizer que o JCEF/CEF passou a trazer codecs.** Quer dizer que os
+binários que o **CinemaMod** distribui já vêm com codecs, porque o CinemaMod é
+quem faz a dance dos patches e os embute. O distributable do `jcefmaven`, que é o
+nosso, não passa por aí.
+
+Ou seja: a rota continua a ser *"usa os binários do CinemaMod"* — e o
+`jcef-natives` do `jcefmaven` nunca teve nem tem variante com codecs.
+
+### Estado actual desse projecto
+
+- `CinemaMod/CinemaMod-Fabric` → **404, já não existe.**
+- `cinemamod/mcef` → vivo, último push **2025-08-11**, mas é o MCEF antigo
+  (1.12/1.16). Não tem binários para CEF 146 / Windows.
+- Outro comentário do issue (2023-10-25, `JonnygamingTv`): *".webm seem to work"* —
+  consistente com o que vemos (YouTube, que serve VP9/Opus, funciona).
+
+**Conclusão:** a rota dos patches bsdiff está **indisponível** para o nosso par
+exacto (JCEF 146.0.10 / Windows amd64 / Minecraft 26.3).
+
+---
+
+## 3c. De onde o mcef-modern descarrega mesmo (verificado do bytecode)
+
+De `me.friwi.jcefmaven.CefAppBuilder`, dois mirrors:
+
+```
+https://github.com/jcefmaven/jcefmaven/releases/download/{mvn_version}/jcef-natives-{platform}-{tag}.jar
+https://repo.maven.apache.org/maven2/me/friwi/jcef-natives-{platform}/{tag}/jcef-natives-{platform}-{tag}.jar
+```
+
+### Existe variante com codecs na mesma origem? **Não.**
+
+Maven Central, grupo `me.friwi`, total **14 artefactos**:
+
+```
+gluegen-rt, jcef-api, jcefmaven, jogl-all, tello4j
+jcef-natives-linux-{amd64,arm,arm64,i386}
+jcef-natives-macosx-{amd64,arm64}
+jcef-natives-windows-{amd64,arm64,i386}
+```
+
+A família `jcef-natives-*` é **só por plataforma**. Não há `-chrome`, não há
+`-proprietary`, não há nada. Confirmado também nos releases do GitHub: cada tag
+publica exactamente um conjunto de natives por plataforma.
+
+(Nota: o `jcefmaven` já vai no **CEF 152.0.6**. Não dá para aproveitá-lo: o
+`jcef.dll` das natives é a ponte JNI e tem de bater certo com o `jcef-api` 146 que
+o `mcef-modern` embute. Misturar 152 com api 146 parte.)
+
+---
+
+## 3d. O mcef-modern deixa apontar para outro binário? **Não.**
+
+`MCEFApi` (javap) tem exactamente isto, e mais nada:
+
+```java
+public static MCEFApi$Initialization initialize();
+public static CompletableFuture<MCEFApi> getInstanceFuture();
+public static MCEFApi getInstance();
+public abstract MCEFBrowser createBrowser(String, boolean);
+```
+
+Sem setter de caminho, sem config, sem override. A única superfície é o disco:
+`run/config/mcef-modern/jcef/`.
+
+### E se substituirmos os ficheiros no disco?
+
+`CefInstallationChecker.checkInstallation(File)` verifica **só** isto:
+
+1. `build_meta.json` existe
+2. `install.lock` existe
+3. `CefBuildInfo.getReleaseTag()` do disco == o do classpath
+4. `getPlatform()` == plataforma actual
+
+**Não há verificação de hash, nem de conteúdo, das DLLs.** Portanto uma
+substituição manual sobrevive ao próximo arranque — o instalador não re-descarrega.
+
+Isto explica também o aviso do thread do vvvv: se só trocares o `libcef.dll`, o
+`jcef.dll` / `chrome_elf.dll` / `resources.pak` ficam de outra build e nada
+verifica isso. Tem de ser a build **coerente e completa**, de uma só vez.
+
+⚠️ Não é uma via suportada. E como não há nenhuma build com codecs publicada
+para o nosso par (§3b), hoje não há o que trocar.
+
+---
+
+## 3e. Custo/risco das saídas, se a sonda confirmar que são codecs
+
+Ordenadas por custo. **Nada disto é para fazer antes de ver o log da sonda.**
+
+**(a) Transcodificar no servidor para VP9/AV1 + Opus (webm)** — *a mais barata*
+- Custo: zero no mod. Só configuração no servidor.
+- Risco: depende de o servidor ter VP9/AV1 como destino de transcodificação.
+  A verificar no painel (o utilizador trata disto).
+- Licença: nada a fazer. VP9/AV1/Opus são livres.
+- **Recomendada se o servidor suportar.**
+
+**(b) Build própria do JCEF 146 com `proprietary_codecs=true ffmpeg_branding=Chrome`**
+- Custo: Docker no Windows + VS2022 Build Tools + a distribuição binária do CEF
+  (~15 GB) + checkout do Chromium. Ordem de grandeza: **200–300 GB de disco e
+  várias horas**, com múltiplas tentativas. Não é um fim-de-semana.
+- Risco: a combinação de flags pode não ser estável; e é preciso uma build
+  *coerente* completa (§3d).
+- Licença: uso pessoal é zona cinzenta (o próprio autor do #28 diz isso);
+  **redistribuir exige licenças**. Anotado para publicação futura.
+
+**(c) CEF só com hardware decoding (issue upstream 3559)**
+- Custo: também exige build própria, e é **mais invasiva** (remover o ffmpeg em
+  vez de o ligar).
+- Limite: sem software de reserva — uma máquina sem decodificação por hardware
+  não toca nada.
+- Só faz sentido se (b) for mesmo necessária.
+
+**(d) Descodificar fora do Chromium (libvlc/ffmpeg → mesma textura)**
+- Custo: grande. Dois pipelines de vídeo, sincronização, áudio, seek.
+- Risco: alto, e é trabalho que não se aproveita no browser.
+- Só se (a) e (b) falharem.
+
+---
+
 ## 4. A sonda (`dev.screenmine.diag.CodecProbe`)
 
 Desligada por omissão. Para ligar, em `run/config/screenmine.properties`:
@@ -229,16 +376,34 @@ Isto decide a direção do bug A com um commit de dados, não com um palpite.
 
 ---
 
+## 6b. O que eu **nao** consigo fazer
+
+O ponto 3 do pedido — *"corre a sonda `debug.codecs=1` numa página do YouTube e
+noutra do servidor e mostra a tabela"* — **nao consigo executá-lo.** A sonda precisa
+de: cliente do Minecraft a correr com interface gráfica, um ecrã criado no mundo,
+e uma navegação real até à página. Não tenho como conduzir isso. **Só tu podes
+correr a sonda**, e o resultado da tabela só existe depois de o fazeres.
+
+O mesmo se aplica ao teste de 2 minutos das teclas (§6) e ao teste da tecla `N`.
+
+Não vou escrever uma tabela de codecs aqui a partir de palpites.
+
+---
+
 ## 7. Estado
 
 | Item | Estado |
 |---|---|
 | Proveniência do binário | ✅ verificada (§2) |
 | Pesquisa de flags de codec | ✅ feita — **não sustenta** a hipótese (§3) |
+| Thread `cinemamod/mcef#28` | ✅ lida; "irrelevante com 2.x" = binários do CinemaMod, não o JCEF (§3b) |
+| Origem dos binários / variante com codecs | ✅ **não existe** no `jcefmaven` (§3c) |
+| mcef-modern aceita outro binário? | ✅ **não**, via API; só por disco, e sem verificação de hash (§3d) |
+| Custo das saídas | ✅ estimado (§3e) |
 | Sonda de codecs em código | ✅ feita, compilada, **por testar em jogo** (§4) |
+| **Tabela de codecs real** | ❌ **não existe** — precisa de correr em jogo (§6b) |
 | Bug A: cadeia de teclas | ✅ verificada (§5) |
 | Bug A: hipótese do `CHAR` | ⏳ **aberta** — decide o teste de §6 |
 | Bug B: tecla `N` (mutar) | ⏳ por investigar, falta saber o contexto do teste |
-| Codecs proprietários / alternativas | ⏳ só depois do log da sonda |
 
 **Nada disto foi provado em jogo.** A sonda compila; falta o log.

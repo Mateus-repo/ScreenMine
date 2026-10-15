@@ -593,7 +593,15 @@ Sem esse log a causa fica por provar. So depois de o ver:
   `jcefmaven/jcefbuild` release `1.0.70`, sem nenhum argumento
   `ffmpeg_branding`/`proprietary_codecs` em `compile_windows.bat`,
   `run_windows.bat`, no workflow, no Dockerfile nem no `CMakeLists.txt` do JCEF.
-  Ver `codecs.md` §3. Falta so saber se existe build alternativa;
+  Ver `codecs.md` §3.
+  - **JA VERIFICADO: nao existe variante com codecs nessa origem.** Maven Central
+    `me.friwi` tem 14 artefactos e a familia `jcef-natives-*` e so por plataforma
+    (sem `-chrome`, sem `-proprietary`). O `mcef-modern` tambem **nao tem API**
+    para apontar para outro binario (`MCEFApi` so tem `initialize/getInstance/
+    createBrowser`). So por disco, e `checkInstallation` **nao verifica hashes**.
+  - O thread `cinemamod/mcef#28` foi lido: "irrelevante com MCEF 2.x" quer dizer
+    que os binarios do **CinemaMod** ja vem com codecs, nao que o JCEF passou a
+    trazer. O `CinemaMod-Fabric` esta em 404. Ver `codecs.md` §3b-3d.
 - (b) custo realista das alternativas (build propria do CEF, outro fork do MCEF,
   ou descodificacao nativa tipo libvlc/ffmpeg para a mesma textura), com custo,
   risco e licenciamento. **H.264 tem questoes de patentes** - hoje e uso pessoal,

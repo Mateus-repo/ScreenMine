@@ -64,7 +64,9 @@ public final class WorldScreenRenderer {
             }
             // The browser is created lazily; until it has a frame we show the plate.
             if (!screen.browser.ensureCreated() || !screen.browser.ready()) {
-                drawSolid(ctx, pose, cam, screen, 16, 16, 20, 220, -1, 0);
+                place(pose, cam, screen);
+                drawSolid(ctx, pose, screen.width, screen.height(), 16, 16, 20, 220, -1, 0, 0);
+                pose.popPose();
                 continue;
             }
             drawScreen(ctx, pose, cam, screen, screen == highlighted || screen.moving);
@@ -94,19 +96,20 @@ public final class WorldScreenRenderer {
         float hw = s.width / 2.0f;
         float hh = s.height() / 2.0f;
 
-        pushAt(pose, cam, s);
+        place(pose, cam, s);
 
+        // The bezel and the backing are drawn in the screen's own frame, so they
+        // must not transform again on top of place().
         boolean bezel = Cfg.DRAW_FRAME || (highlight && Cfg.HIGHLIGHT_AIMED);
         if (Cfg.OPAQUE_BACKGROUND || bezel) {
             int r = highlight ? 90 : 20;
             int g = highlight ? 200 : 20;
             int b = highlight ? 255 : 24;
             if (bezel) {
-                float o = Cfg.FRAME_THICKNESS;
-                drawSolid(ctx, pose, cam, s, r, g, b, 255, 0, -1, o);
+                drawSolid(ctx, pose, s.width, s.height(), r, g, b, 255, 0, -1, Cfg.FRAME_THICKNESS);
             }
             if (Cfg.OPAQUE_BACKGROUND) {
-                drawSolid(ctx, pose, cam, s, 0, 0, 0, 255, -0.002f, 0);
+                drawSolid(ctx, pose, s.width, s.height(), 0, 0, 0, 255, -0.002f, 0, 0);
             }
         }
 
@@ -132,16 +135,11 @@ public final class WorldScreenRenderer {
      * @param z    z offset inside the screen's plane
      * @param grow how far to inflate the rectangle on every side; negative shrinks
      */
-    private void drawSolid(LevelRenderContext ctx, PoseStack pose, Vec3 cam, PlacedScreen s,
-                           int r, int g, int b, int alpha, float z, float grow) {
-        drawSolid(ctx, pose, cam, s, r, g, b, alpha, z, grow, 0f);
-    }
-
-    /** As above, but also outlining a frame of thickness {@code thick}. */
-    private void drawSolid(LevelRenderContext ctx, PoseStack pose, Vec3 cam, PlacedScreen s,
+    private void drawSolid(LevelRenderContext ctx, PoseStack pose,
+                           float width, float height,
                            int r, int g, int b, int alpha, float z, float grow, float thick) {
-        float hw = s.width / 2.0f + grow;
-        float hh = s.height() / 2.0f + grow;
+        float hw = width / 2.0f + grow;
+        float hh = height / 2.0f + grow;
 
         // RenderTypes.debugQuads is the vanilla render type for plain coloured quads and
         // needs no texture. Its vertex format is built lazily, so it could not be
@@ -149,10 +147,6 @@ public final class WorldScreenRenderer {
         // builder drop the ones this format does not use, which makes the choice
         // format-agnostic.
         RenderType type = RenderTypes.debugQuads();
-
-        pose.pushPose();
-        pose.translate((float) (s.pos.x - cam.x), (float) (s.pos.y - cam.y), (float) (s.pos.z - cam.z));
-        pose.rotateDegrees(Axis.YP, -s.yaw);
 
         final float zf = z;
         if (thick > 0f) {
@@ -164,8 +158,6 @@ public final class WorldScreenRenderer {
         } else {
             bar(ctx, pose, type, -hw, -hh, hw, hh, zf, r, g, b, alpha);
         }
-
-        pose.popPose();
     }
 
     private void bar(LevelRenderContext ctx, PoseStack pose, RenderType type,
@@ -202,10 +194,21 @@ public final class WorldScreenRenderer {
                 .setNormal(0f, 1f, 0f);
     }
 
-    /** Moves to the screen's own frame: camera-relative, then yaw. */
-    private void pushAt(PoseStack pose, Vec3 cam, PlacedScreen s) {
+    /**
+     * Moves the pose into the screen's own frame: camera-relative, then yaw.
+     *
+     * <p>The {@link PoseStack} handed to the level render event is already relative to
+     * the camera, like every other piece of level geometry, so the only translate
+     * needed is the screen position minus the camera. Subtracting the camera a second
+     * time - which the render spike did - leaves the quad at {@code pos - 2 * cam},
+     * so it drifts twice as fast as the player walks. That is exactly how it looked:
+     * screens that would not stay where they were placed.
+     *
+     * <p>Everything belonging to one screen - backing, bezel and picture - is drawn
+     * inside a single call to this, so they cannot drift apart from each other.
+     */
+    private void place(PoseStack pose, Vec3 cam, PlacedScreen s) {
         pose.pushPose();
-        pose.translate(-cam.x, -cam.y, -cam.z);
         pose.translate((float) (s.pos.x - cam.x), (float) (s.pos.y - cam.y), (float) (s.pos.z - cam.z));
         pose.rotateDegrees(Axis.YP, -s.yaw);
     }

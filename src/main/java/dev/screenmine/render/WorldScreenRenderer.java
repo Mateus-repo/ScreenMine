@@ -56,6 +56,8 @@ public final class WorldScreenRenderer {
         ScreenWorld.Hit hit = ScreenMineClient.get().currentHit();
         PlacedScreen highlighted = hit == null ? null : hit.screen();
 
+        releaseDetached();
+
         for (PlacedScreen screen : world.all()) {
             if (!screen.dimension.equals(dim)) {
                 continue;
@@ -67,6 +69,24 @@ public final class WorldScreenRenderer {
             }
             drawScreen(ctx, pose, cam, screen, screen == highlighted || screen.moving);
         }
+    }
+
+    /**
+     * Drops the texture registrations of screens that are no longer placed, so
+     * spawning and removing screens does not accumulate entries forever. Release
+     * is safe: {@link BrowserTexture#close()} does not free the browser's texture.
+     */
+    private void releaseDetached() {
+        if (textureIds.isEmpty()) {
+            return;
+        }
+        textureIds.entrySet().removeIf(e -> {
+            if (world.get(e.getKey()) != null) {
+                return false;
+            }
+            Minecraft.getInstance().getTextureManager().release(e.getValue());
+            return true;
+        });
     }
 
     private void drawScreen(LevelRenderContext ctx, PoseStack pose, Vec3 cam,

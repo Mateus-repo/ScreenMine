@@ -37,9 +37,19 @@ public final class BrowserTexture extends AbstractTexture {
         return browser.textureView();
     }
 
+    /**
+     * The sampler follows the view, and is deliberately null whenever the view is.
+     *
+     * <p>The render pipeline binds the pair together and throws
+     * {@code IllegalArgumentException: textureView and sampler must both or neither
+     * be null} if only one of them is set. Geometry submitted while the browser was
+     * alive is drawn a little later, and by then the browser can have been closed or
+     * resized, which drops the view. Returning null with it keeps the pair
+     * consistent instead of crashing the render thread.
+     */
     @Override
     public GpuSampler getSampler() {
-        return sampler;
+        return browser.textureView() == null ? null : sampler;
     }
 
     /**

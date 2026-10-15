@@ -76,22 +76,28 @@ public final class BrowserInstance {
             "var ad=(document.querySelector('.ad-showing,.video-ads,.ytp-ad-player-overlay,.ytp-ad-module')!==null)?'1':'0';" +
             "var u=window.location.href.replace(/\\|/g,'');" +
             "var s='SM|'+t+'|'+p+'|'+ed+'|'+ad+'|'+u+'|'+pageTitle().replace(/\\|/g,' ').slice(0,120);" +
-            "if(s!==last){last=s;document.title=s;}" +
-            // Self report, on change only. The mute bug was invisible from Java:
-            // applyGain looked correct and nothing happened in the page. These
-            // are the numbers that tell the causes apart - vol is what Java last
-            // pushed, media is how many elements the querySelectorAll saw, and
-            // vvolume is what the element's volume actually is. Logging on
-            // change means the interesting 0 -> 1 transition cannot be missed,
-            // which a single sample 1.5s after injection did (12:55:32, media=0,
-            // YouTube had not created its player yet).
+            // Depends on what the DOCUMENT holds, not on what we last wrote.
+            // The old guard was `if(s!==last)`, and `last` is our own payload -
+            // so the instant the page set document.title itself (YouTube does,
+            // with the video name) the agent stopped rewriting, the mod stopped
+            // receiving SM|, and everything derived from it froze at its initial
+            // value: hasVideo, playbackPaused, isEditing, isAd. That is a single
+            // candidate for both "N does nothing" and "editing keys never work".
+            "if(s!==last||document.title.slice(0,3)!=='SM|'){last=s;document.title=s;}" +
+            // Self report, on change only. href and top are the two fields that
+            // say whether this agent is even in the document anyone is looking
+            // at: an about:blank href means executeJavaScript landed on the
+            // initial frame, and 'iframe' means it landed in a subframe, where
+            // the querySelectorAll above cannot see the video.
             "if(all.length!==lastMedia||Math.abs(window.__smVol-lastVol)>0.001){" +
             "lastMedia=all.length;lastVol=window.__smVol;" +
             "console.log(\"" + CodecProbe.AGENT_PREFIX + "vol=\"+window.__smVol" +
             "+\"|media=\"+all.length" +
             "+\"|vvolume=\"+(v?v.volume.toFixed(2):'-')" +
             "+\"|vpaused=\"+(v?(v.paused?'1':'0'):'-')" +
-            "+\"|editable=\"+ed);" +
+            "+\"|editable=\"+ed" +
+            "+\"|top=\"+(window.top===window?'main':'iframe')" +
+            "+\"|href=\"+window.location.href.replace(/\\|/g,'').slice(0,80));" +
             "}" +
             "}catch(e){}},250);" +
             "})();";
@@ -159,9 +165,31 @@ public final class BrowserInstance {
         // editing shim. The bug report "N does nothing in the world" was this.
         String target = currentUrl;
         LOGGER.info("CREATE url={} surface={}x{}", target, surfaceWidth, surfaceHeight);
-        browser = MCEFApi.getInstance().createBrowser("about:blank", false);
+        // Without this, a createBrowser that throws would be retried on every
+        // frame of every screen, because the renderer calls ensureCreated() once
+        // per screen per frame and browser would still be null. One attempt, one
+        // log line, then stop trying.
+        try {
+            browser = MCEFApi.getInstance().createBrowser("about:blank", false);
+        } catch (RuntimeException ex) {
+            LOGGER.error("CREATE failed for {}: {}", streamId, ex.toString());
+            browser = null;
+            return false;
+        }
+        if (browser == null || browser.getCefBrowser() == null) {
+            LOGGER.error("CREATE returned nothing usable for {}", streamId);
+            browser = null;
+            return false;
+        }
         browser.resize(surfaceWidth, surfaceHeight);
         installHandlersOnce(browser.getCefBrowser().getClient());
+        if (!handlersInstalled) {
+            // Same signature as the original bug: a browser created before the
+            // shared client was available never gets a load handler, so
+            // onLoadEnd never fires and the page agent never arrives. Silent
+            // until it is logged.
+            LOGGER.error("no CefClient yet - this browser will get no load handler");
+        }
         LIVE.put(browser.getCefBrowser().getIdentifier(), this);
         agentInjected = false;
         agentTicks = 0;
@@ -198,6 +226,23 @@ public final class BrowserInstance {
         LOGGER.info("AGENT injected by retry (onLoadEnd never fired)");
     }
 
+    /**
+     * How many {@code SM|} reports to log in full before going quiet.
+     *
+     * <p>Not a debug aid bolted on: four runs of this mod and not one line had
+     * ever shown a report arriving. That silence is the reason "N does nothing"
+     * could not be reasoned about - {@code hasVideo}, {@code playbackPaused},
+     * {@code isEditing} and {@code isAd} all read straight out of this payload,
+     * and if it never lands they are silently stuck at their initial values.
+     * Proving the channel works is worth a log line; proving it keeps working is
+     * not, hence the throttle.
+     */
+    private static final int STATE_LOG_FIRST = 5;
+    private static final int STATE_LOG_EVERY = 200;
+
+    private int stateReports;
+    private boolean stateLoggedOnce;
+
     private static BrowserInstance lookup(CefBrowser b) {
         return b == null ? null : LIVE.get(b.getIdentifier());
     }
@@ -228,6 +273,7 @@ public final class BrowserInstance {
                     return;
                 }
                 if (title.startsWith(STATE_PREFIX)) {
+                    self.logStateReport(title);
                     self.parseState(title);
                 } else {
                     self.pageTitle = title;
@@ -287,6 +333,11 @@ public final class BrowserInstance {
     private void injectAgent() {
         CefBrowser cef = cef();
         if (cef != null) {
+            // frameCount is here because "the agent cannot see the video" has two
+            // very different causes and this tells them apart: 1 means the video
+            // should have been found in the main frame and something else is
+            // wrong, 2 or more means the video is probably in an iframe.
+            LOGGER.info("INJECT agent, frames={}, url={}", cef.getFrameCount(), cef.getURL());
             cef.executeJavaScript(AGENT_JS, cef.getURL(), 0);
             // fresh page: whatever we pushed before is gone, so push it again
             appliedGain = -1.0;
@@ -332,6 +383,22 @@ public final class BrowserInstance {
 
     public double appliedGain() {
         return Math.max(0.0, appliedGain);
+    }
+
+    /** Throttled proof that the page's state channel is alive. */
+    private void logStateReport(String title) {
+        stateReports++;
+        if (stateReports == 1) {
+            LOGGER.info("SM| channel alive for {} - first payload: {}", streamId, title);
+        } else if (stateReports <= STATE_LOG_FIRST) {
+            LOGGER.info("SM| #{} {}", stateReports, title);
+        } else if (stateReports % STATE_LOG_EVERY == 0) {
+            LOGGER.info("SM| #{} (still alive) {}", stateReports, title);
+        } else if (!stateLoggedOnce) {
+            stateLoggedOnce = true;
+            LOGGER.info("SM| further payloads for {} throttled to every {}th",
+                    streamId, STATE_LOG_EVERY);
+        }
     }
 
     private void parseState(String title) {

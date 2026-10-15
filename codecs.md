@@ -237,6 +237,56 @@ Ordenadas por custo. **Nada disto é para fazer antes de ver o log da sonda.**
 
 ---
 
+## 5b. **CAUSA RAIZ encontrada nos logs de 2026-10-15 12:41**
+
+O log dessa corrida **nao tem nenhuma linha `ONLOADEND`**. E nenhuma
+`AGENT injected by retry`. Ou seja: **o agente de pagina nunca foi injectado.**
+
+Isto explica sozinho o bug B (tecla N) e grande parte do bug A:
+
+| O que o agente faz | O que acontecia sem agente |
+|---|---|
+| `setInterval` que lê `window.__smVol` | `applyGain(0)` escrevia `window.__smVol=0` numa pagina que ninguem lia -> **N dizia "sound off" no chat e nada acontecia** |
+| shim de edicao `__smEdit` | Backspace/Delete/setas nunca faziam nada no mundo |
+| relatorio de playback no titulo | sem estado de reproducao |
+
+E o teste do N que o utilizador fez foi exactamente no sitio onde falha: **ecra a
+tocar no mundo, sem overlay aberto.**
+
+### Porque o agente nunca era injectado — duas causas
+
+**1. `onLoadEnd` nunca dispara.** `MCEFApiImpl.createBrowser` chama
+`createImmediately()` (verificado de bytecode), ou seja, o carregamento começa
+**dentro** de `createBrowser()`. O codigo registava os handlers *depois*:
+
+```java
+browser = MCEFApi.getInstance().createBrowser(currentUrl, false);   // ja comeca a carregar
+browser.resize(...);
+installHandlersOnce(...);      // tarde demais se a pagina for rapida
+LIVE.put(...);
+```
+
+O comentario no codigo descrevia exactamente este bug e a correccao — *"Create on
+about:blank, then navigate"* — mas o codigo nao a implementava: estava atras de
+`if (false)`.
+
+**2. `pumpAgent()` so era chamado pelo overlay.** `grep` confirma: o unico caller
+e `BrowserFullScreen.tick()`. Com o overlay fechado, **nada** injectava o agente.
+
+### Correcoes aplicadas
+
+1. `createBrowser("about:blank")` -> `installHandlersOnce` -> `LIVE.put` ->
+   `loadURL(alvo)`. Agora a navegacao real acontece com tudo registado.
+2. `ScreenMineClient.pumpAgents()` corre no tick do cliente para **todos** os
+   ecrãs, em vez de so o overlay.
+3. O log das teclas passou a dizer `BACKSPACE` em vez de `271`
+   (`InputConstants.getKey(event).getName()`), para o teste ser legivel.
+
+**Isto ainda nao foi provado em jogo.** Preciso de uma corrida com `ONLOADEND`
+a aparecer e com o `N` a calar a musica no mundo.
+
+---
+
 ## 4. A sonda (`dev.screenmine.diag.CodecProbe`)
 
 Desligada por omissão. Para ligar, em `run/config/screenmine.properties`:

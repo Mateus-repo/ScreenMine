@@ -1,5 +1,6 @@
 package dev.screenmine.gui;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.renderpearl.api.textures.FilterMode;
@@ -214,6 +215,23 @@ public final class BrowserFullScreen extends Screen {
         return true;
     }
 
+    /**
+     * A readable name for the key, so the log says BACKSPACE instead of 271.
+     *
+     * <p>The bare integer was useless for the bug it was meant to settle: the
+     * open question is whether a key press arrives without the matching
+     * {@code charTyped}, and you cannot tell which key was involved if the log
+     * only carries a number. {@code InputConstants.getKey} maps the name back to
+     * a key for anything vanilla knows about.
+     */
+    private static String keyName(KeyEvent event) {
+        try {
+            return InputConstants.getKey(event).getName();
+        } catch (RuntimeException ex) {
+            return "raw-" + event.key();
+        }
+    }
+
     @Override
     public boolean keyPressed(KeyEvent event) {
         if (event.isEscape()) {
@@ -224,7 +242,7 @@ public final class BrowserFullScreen extends Screen {
         if (b == null) {
             return super.keyPressed(event);
         }
-        LOG.info("IN keyPressed key={} keycode={} mods={}", event.key(), event.keycode(), event.modifiers());
+        LOG.info("IN keyPressed {} mods={}", keyName(event), event.modifiers());
         b.onKeyPressed(event);
         b.setFocus(true);
         return true;
@@ -236,7 +254,7 @@ public final class BrowserFullScreen extends Screen {
         if (b == null) {
             return super.keyReleased(event);
         }
-        LOG.info("IN keyReleased key={}", event.key());
+        LOG.info("IN keyReleased {}", keyName(event));
         b.onKeyReleased(event);
         return true;
     }

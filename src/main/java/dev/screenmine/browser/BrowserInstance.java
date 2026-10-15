@@ -130,28 +130,28 @@ public final class BrowserInstance {
         }
         // Create on about:blank, then navigate, so the load and display handlers
         // are registered before any real page starts loading. Creating straight at
-        // the target URL raced: a fast page (a data: URL, or a cache hit) fired
-        // onLoadEnd before installHandlersOnce had run, so onLoadEnd never fired at
-        // all and the page agent was never injected. That silently killed the
-        // playback tracking and the editing shim.
-        LOGGER.info("CREATE url={} surface={}x{}", currentUrl, surfaceWidth, surfaceHeight);
-        browser = MCEFApi.getInstance().createBrowser(currentUrl, false);
+        // the target URL raced: MCEFApiImpl.createBrowser calls createImmediately()
+        // on the JCEF side, so loading begins inside createBrowser(). A fast page
+        // (a cache hit, or about:blank itself) finished before installHandlersOnce
+        // had run, so onLoadEnd never fired at all.
+        //
+        // That is not theoretical. The 2026-10-15 12:41 run had no ONLOADEND line
+        // at all, which is the signature: the page agent was never injected, and
+        // with it went the volume enforcement, the playback tracking and the
+        // editing shim. The bug report "N does nothing in the world" was this.
+        String target = currentUrl;
+        LOGGER.info("CREATE url={} surface={}x{}", target, surfaceWidth, surfaceHeight);
+        browser = MCEFApi.getInstance().createBrowser("about:blank", false);
         browser.resize(surfaceWidth, surfaceHeight);
         installHandlersOnce(browser.getCefBrowser().getClient());
         LIVE.put(browser.getCefBrowser().getIdentifier(), this);
         agentInjected = false;
         agentTicks = 0;
-        if (false) {   // reverted: data: is fine for createBrowser, see git log
-            // Chromium refuses a data: URL as a top-level navigation: onLoadEnd never
-            // fires and the page stays blank. Build it on about:blank instead.
-            String html = currentUrl.substring(currentUrl.indexOf((int) 44) + 1);
-            LOGGER.info("INJECT data-url into about:blank, {} chars", html.length());
-            injectJavaScript("document.open();document.write(decodeURIComponent(STRING))"
-                    .replace("STRING", "\"" + html + "\""));
-        } else if (false) {
-            LOGGER.info("NAVIGATE to {}", currentUrl);
-            browser.getCefBrowser().loadURL(currentUrl);
-        }
+        // Only now, with the handlers registered and the id mapped, go to the
+        // real page. currentUrl is restored because navigate() would clear it.
+        currentUrl = target;
+        LOGGER.info("NAVIGATE to {}", target);
+        browser.getCefBrowser().loadURL(target);
         return true;
     }
 

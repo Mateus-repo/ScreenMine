@@ -260,6 +260,7 @@ public final class ScreenMineClient implements ClientModInitializer {
             tickGrabGesture(mc);
         }
         tickAudio(mc);
+        pumpAgents();
         reportOwnedStreams();
     }
 
@@ -547,6 +548,22 @@ public final class ScreenMineClient implements ClientModInitializer {
      * master volume. Recomputed a few times a second; the browser only gets a
      * JS call when the value actually moved.
      */
+    /**
+     * Gives every placed screen a chance to install its page agent.
+     *
+     * <p>The overlay has always done this from {@code BrowserFullScreen.tick()},
+     * but that left the world with no agent at all when the overlay was closed:
+     * {@code applyGain} happily writes {@code window.__smVol} into a page with no
+     * interval reading it, so N reported "sound off" in chat and changed nothing.
+     * Same for the editing shim and playback tracking. OnLoadEnd normally covers
+     * this, but it is a race, so the retry has to run wherever the browser lives.
+     */
+    private void pumpAgents() {
+        for (PlacedScreen screen : world.all()) {
+            screen.browser.pumpAgent();
+        }
+    }
+
     private void tickAudio(Minecraft mc) {
         if (++audioTicker < Cfg.AUDIO_TICKS) {
             return;

@@ -453,6 +453,7 @@ ate ao momento o build verde escondia tres bugs de render.
 | 1o teste do port (11:28) | crash `Missing elements in vertex` | faltavam atributos no vertice |
 | 2o teste do port (11:39) | crash `textureView and sampler must both or neither be null` | o sampler tinha de seguir a vista |
 | 3o teste do port (11:38-12:11) | **`BUILD SUCCESSFUL`, ecra no mundo desenhado** | o render esta provado; falta o input |
+| 4o teste (12:41-12:43) | sem `ONLOADEND` no log | **agente nunca injectado** -> causa raiz do N e do shim de edicao (`codecs.md` §5b) |
 
 ### Corrida 2 (11:39) - detalhes
 - **Confirmado em jogo:** a aba de teclas mostra **"ScreenMine"** (a correcao dos
@@ -550,11 +551,17 @@ o problema esta a jusante, no JCEF/CEF.
 
 ### B) TECLA N (MUTAR) NAO FAZ NADA - PRIORIDADE 2
 
-Por investigar com logs: o `KeyMapping` esta registado na categoria nova? o handler
-e chamado (`consumeClick`/tick)? a tecla esta a ser consumida por outro handler?
-o estado de mute chega ao audio do browser (volume 0 via JS, ou no pipeline de
-audio)? **Falta saber em que contexto foi testado** (overlay, frente ao ecra no
-mundo, ou com video a tocar) - isso decide em que parte do codigo esta o problema.
+> **CAUSA RAIZ ENCONTRADA** (ver `codecs.md` §5b). Contexto confirmado pelo
+> utilizador: **ecra a tocar no mundo, sem overlay aberto.** E o sitio onde falha.
+> O log dessa corrida nao tem **nenhuma linha `ONLOADEND`** -> o agente de pagina
+> nunca foi injectado -> o `setInterval` que le `window.__smVol` nunca correu ->
+> `applyGain(0)` escrevia num sitio que ninguem lia. O chat dizia "sound off" e
+> nada acontecia, porque essa parte e Java.
+> Duas causas: (1) `createBrowser` chama `createImmediately()`, logo comeca a
+> carregar antes de `installHandlersOnce`; (2) `pumpAgent()` so era chamado pelo
+> overlay.
+> **CORRIGIDO em `spike/codecs`** (about:blank -> handlers -> loadURL, e
+> `pumpAgents()` no tick do mundo). **Por confirmar em jogo.**
 
 ### C) VIDEO EM OUTROS SITES - PRIORIDADE 2
 

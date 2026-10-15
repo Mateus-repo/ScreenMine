@@ -101,6 +101,9 @@ public final class BrowserInstance {
 
     /** Last gain actually pushed into the page, 0..1; -1 means "unknown". */
     private double appliedGain = -1.0;
+    /** Fallback agent injection: frames waited, and whether it already ran. */
+    private int agentTicks;
+    private boolean agentInjected;
 
     public BrowserInstance(String streamId, String url) {
         this.streamId = streamId;
@@ -133,6 +136,8 @@ public final class BrowserInstance {
         browser.resize(surfaceWidth, surfaceHeight);
         installHandlersOnce(browser.getCefBrowser().getClient());
         LIVE.put(browser.getCefBrowser().getIdentifier(), this);
+        agentInjected = false;
+        agentTicks = 0;
         if (false) {   // reverted: data: is fine for createBrowser, see git log
             // Chromium refuses a data: URL as a top-level navigation: onLoadEnd never
             // fires and the page stays blank. Build it on about:blank instead.
@@ -155,6 +160,23 @@ public final class BrowserInstance {
     private static final Map<Integer, BrowserInstance> LIVE = new ConcurrentHashMap<>();
     private static boolean handlersInstalled;
 
+    /**
+     * Injects the page agent as a fallback. A data: URL finishes loading before the
+     * CEF handlers are registered, so onLoadEnd never fires and the agent — which
+     * carries the editing shim — never runs. Retry once the page has settled.
+     */
+    public void pumpAgent() {
+        if (agentInjected || browser == null) {
+            return;
+        }
+        if (++agentTicks < 40) {
+            return;
+        }
+        agentInjected = true;
+        injectAgent();
+        LOGGER.info("AGENT injected by retry (onLoadEnd never fired)");
+    }
+
     private static BrowserInstance lookup(CefBrowser b) {
         return b == null ? null : LIVE.get(b.getIdentifier());
     }
@@ -171,6 +193,7 @@ public final class BrowserInstance {
                 BrowserInstance self = lookup(b);
                 if (self != null) {
                     LOGGER.info("ONLOADEND status={} url={} textureView={}", httpStatusCode, self.url(), self.textureView() != null);
+                    self.agentInjected = true;
                     self.injectAgent();
                 }
             }

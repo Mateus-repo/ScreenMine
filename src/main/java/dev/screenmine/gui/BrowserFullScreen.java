@@ -56,6 +56,9 @@ public final class BrowserFullScreen extends Screen {
         // input focus. Without this, key events arrive but charTyped never does,
         // so typing does nothing at all.
         minecraft.onTextInputFocusChange(this, true);
+        // Keep the page agent alive: onLoadEnd can miss a fast page, so the
+        // fallback retry is what actually gets the agent (and the editing shim) in.
+        screen.browser.pumpAgent();
         screen.browser.ensureCreated();
         fitToWindow();
         MCEFBrowser b = browser();

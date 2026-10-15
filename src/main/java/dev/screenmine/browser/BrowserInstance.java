@@ -129,18 +129,18 @@ public final class BrowserInstance {
         // all and the page agent was never injected. That silently killed the
         // playback tracking and the editing shim.
         LOGGER.info("CREATE url={} surface={}x{}", currentUrl, surfaceWidth, surfaceHeight);
-        browser = MCEFApi.getInstance().createBrowser("about:blank", false);
+        browser = MCEFApi.getInstance().createBrowser(currentUrl, false);
         browser.resize(surfaceWidth, surfaceHeight);
         installHandlersOnce(browser.getCefBrowser().getClient());
         LIVE.put(browser.getCefBrowser().getIdentifier(), this);
-        if (currentUrl.startsWith("data:")) {
+        if (false) {   // reverted: data: is fine for createBrowser, see git log
             // Chromium refuses a data: URL as a top-level navigation: onLoadEnd never
             // fires and the page stays blank. Build it on about:blank instead.
             String html = currentUrl.substring(currentUrl.indexOf((int) 44) + 1);
             LOGGER.info("INJECT data-url into about:blank, {} chars", html.length());
             injectJavaScript("document.open();document.write(decodeURIComponent(STRING))"
                     .replace("STRING", "\"" + html + "\""));
-        } else if (!"about:blank".equals(currentUrl)) {
+        } else if (false) {
             LOGGER.info("NAVIGATE to {}", currentUrl);
             browser.getCefBrowser().loadURL(currentUrl);
         }

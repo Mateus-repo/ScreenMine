@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import dev.screenmine.browser.BrowserInstance;
+import dev.screenmine.diag.CodecProbe;
 import dev.screenmine.gui.MenuMain;
 import dev.screenmine.net.NetClient;
 import dev.screenmine.net.Packets;
@@ -114,6 +115,8 @@ public final class ScreenMineClient implements ClientModInitializer {
         // after the vanilla overlays so nothing covers our text.
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(MOD_ID, "hud"),
                 (gfx, delta) -> hud.render(gfx));
+
+        CodecProbe.loadSetting();
 
         LOG.info("ScreenMine ready — {}", Cfg.serverConfigured()
                 ? "companion server " + Cfg.SERVER_HOST + ":" + Cfg.SERVER_PORT

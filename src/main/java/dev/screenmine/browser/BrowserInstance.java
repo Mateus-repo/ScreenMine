@@ -2,6 +2,7 @@ package dev.screenmine.browser;
 
 
 import dev.screenmine.Cfg;
+import dev.screenmine.diag.CodecProbe;
 import net.dimaskama.mcef.api.MCEFApi;
 import net.dimaskama.mcef.api.MCEFBrowser;
 import org.cef.browser.CefBrowser;
@@ -104,6 +105,8 @@ public final class BrowserInstance {
     /** Fallback agent injection: frames waited, and whether it already ran. */
     private int agentTicks;
     private boolean agentInjected;
+    /** Codec support is per Chromium build, so the probe runs once per browser. */
+    private boolean probeRan;
 
     public BrowserInstance(String streamId, String url) {
         this.streamId = streamId;
@@ -206,7 +209,12 @@ public final class BrowserInstance {
                 if (self == null || title == null) {
                     return;
                 }
-                if (title.startsWith(STATE_PREFIX)) {
+                if (title.startsWith(CodecProbe.PREFIX)) {
+                    // Diagnostic payload, not playback state. Report it and leave
+                    // the page title we had before untouched: the agent rewrites
+                    // the title every 250ms anyway.
+                    CodecProbe.report(title.substring(CodecProbe.PREFIX.length()));
+                } else if (title.startsWith(STATE_PREFIX)) {
                     self.parseState(title);
                 } else {
                     self.pageTitle = title;
@@ -247,6 +255,25 @@ public final class BrowserInstance {
             cef.executeJavaScript(AGENT_JS, cef.getURL(), 0);
             // fresh page: whatever we pushed before is gone, so push it again
             appliedGain = -1.0;
+            maybeProbeCodecs();
+        }
+    }
+
+    /**
+     * Asks the page what it can decode, once per browser.
+     *
+     * <p>Codec support belongs to the Chromium build, not to the page, so one
+     * answer per browser is enough and avoids repeating the table on every
+     * navigation. {@link CodecProbe} owns the JS and the logging.
+     */
+    private void maybeProbeCodecs() {
+        if (probeRan || !CodecProbe.enabled()) {
+            return;
+        }
+        probeRan = true;
+        CefBrowser cef = cef();
+        if (cef != null) {
+            cef.executeJavaScript(CodecProbe.script(), cef.getURL(), 0);
         }
     }
 

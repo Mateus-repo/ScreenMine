@@ -421,6 +421,7 @@ Checklist completa em baixo.
 - [ ] **Bug C:** `https://strefizstreamsrv.ddns.net/web/#/home` reproduz video
 - [ ] **Bug C:** TikTok / MedalTV reproduzem video
 - [ ] **Bug C:** a sonda de codecs faz log em `latest.log`
+      (`debug.codecs=1`, logger `ScreenMine/codecs`)
 - [ ] Mudas de browser: a URL e partilhada com a sessao
 
 **Colocacao**
@@ -504,11 +505,24 @@ nunca geram o evento `CHAR` que o CEF offscreen espera
 nada": o `keyPressed` passa, o `CHAR` falta.
 
 Caveat do registo: **isto e hipotese**, e do raciocinio sobre o Minecraft, nao
-sobre o codigo do `mcef-modern`. Antes de mexer, confirmar com `javap`:
-1. metodos de teclas do `CefBrowser` (`sendKeyPress`/`sendKeyRelease`/
-   `sendKeyTyped` ou equivalente) e o que o `onKeyPressed` do `mcef-modern`
-   realmente envia para Backspace e Enter;
-2. se falta o evento `CHAR`, sintetiza-lo (`\b`, `\r`, `\t`).
+sobre o codigo do `mcef-modern`.
+
+**Ja verificado com `javap` (ver `codecs.md` §5):**
+1. `MCEFBrowser.onKeyPressed` envia AWT `KEY_PRESSED` (401), `onCharTyped` envia
+   `KEY_TYPED` (400), `onKeyReleased` `KEY_RELEASED` (402). Todos para
+   `CefBrowser_N.sendKeyEvent`, que e `protected final` e delega imediato para
+   `N_SendKeyEvent`, **nativo**.
+   => **o passo final e nativo: nao e possivel dizer pelo `javap` se o JCEF
+   sintetiza o `CHAR`. A hipotese fica aberta, nem provada nem refutada.**
+2. `KeyboardHandler` tem `keyPress(long,int,KeyEvent)` e
+   `charTyped(long,CharacterEvent)`. Quem chama `charTyped`, e para que teclas,
+   esta na camada window/SDL3 e **ainda nao foi verificado**.
+3. **`CefFrame` tem `selectAll/copy/cut/paste/undo/redo`** e `CefBrowser` tem
+   `canGoBack/goBack/canGoForward/goForward`. Portanto **A2 e A3 sao
+   implementaveis com API publica, sem mixins e sem shim JS.**
+4. O `BrowserFullScreen` **ja faz log** de cada evento (`ScreenMine/input`:
+   `IN keyPressed`, `IN charTyped`, ...). O teste de §"2 minutos" em `codecs.md`
+   §6 precisa de zero codigo novo.
 
 Atalhos `Ctrl` a implementar explicitamente (o CEF offscreen nao os executa
 sozinho): `Ctrl+A` selectAll, `Ctrl+C` copy, `Ctrl+X` cut, `Ctrl+V` paste,
@@ -524,6 +538,16 @@ Teste: pagina local com `createBrowser` + `data:` URL, a registar
 `keydown`/`keypress`/`input` (com `key`, `code`, `keyCode`), um `textarea` longo,
 `window.getSelection()` e o valor do campo apos cada accao. **Tabela por tecla.**
 
+**PRIMEIRO, o teste que nao precisa de codigo** (`codecs.md` §6): com o overlay
+aberto, numa caixa de texto, prima `Backspace` e `Enter`, e veja o `latest.log`:
+
+```powershell
+Select-String "IN keyPressed|IN charTyped" run\logs\latest.log | Select -Last 20
+```
+
+`IN keyPressed` **sem** `IN charTyped` => hipotese confirmada. Os dois juntos =>
+o problema esta a jusante, no JCEF/CEF.
+
 ### B) TECLA N (MUTAR) NAO FAZ NADA - PRIORIDADE 2
 
 Por investigar com logs: o `KeyMapping` esta registado na categoria nova? o handler
@@ -533,6 +557,14 @@ audio)? **Falta saber em que contexto foi testado** (overlay, frente ao ecra no
 mundo, ou com video a tocar) - isso decide em que parte do codigo esta o problema.
 
 ### C) VIDEO EM OUTROS SITES - PRIORIDADE 2
+
+> **Investigacao feita na branch `spike/codecs`, registada em `codecs.md`.**
+> Resumo: a provenance do binario esta verificada
+> (mcef-modern 0.3.3 -> JCEF d3de827 -> CEF 146.0.10 -> Chromium 146.0.7680.179,
+> binarios do `jcefmaven/jcefbuild` 1.0.70). A pesquisa de
+> `ffmpeg_branding`/`proprietary_codecs` na cadeia de build **nao encontrou
+> nenhum argumento**, o que **enfraquece** a hipotese dos codecs em vez de a
+> confirmar. A sonda `CodecProbe` esta escrita e compilada; falta o log.
 
 - URL do utilizador: `https://strefizstreamsrv.ddns.net/web/#/home` (parece
   Jellyfin/Emby, por confirmar). **Alta prioridade.**
@@ -551,10 +583,17 @@ Sonda a correr via `executeJavaScript` no carregamento de cada pagina, a logar:
 - `MediaSource.isTypeSupported(...)` para os mesmos;
 - `navigator.userAgent`.
 
+**Ja implementada** em `dev.screenmine.diag.CodecProbe`, ligada com
+`debug.codecs=1` em `config/screenmine.properties`. Resposta no `latest.log`, no
+logger `ScreenMine/codecs`, uma linha por codec. Compila; **ainda nao correu em
+jogo**. Detalhes em `codecs.md` §4.
+
 Sem esse log a causa fica por provar. So depois de o ver:
-- (a) de onde vem o binario do JCEF do `mcef-modern` (URL/repo, versao
-  `jcef146.0.10`) e se existe build alternativa com codecs proprietarios
-  (`ffmpeg_branding=Chrome`, `proprietary_codecs=true`) ou opcao de configuracao;
+- (a) de onde vem o binario do JCEF do `mcef-modern` - **JA VERIFICADO**:
+  `jcefmaven/jcefbuild` release `1.0.70`, sem nenhum argumento
+  `ffmpeg_branding`/`proprietary_codecs` em `compile_windows.bat`,
+  `run_windows.bat`, no workflow, no Dockerfile nem no `CMakeLists.txt` do JCEF.
+  Ver `codecs.md` §3. Falta so saber se existe build alternativa;
 - (b) custo realista das alternativas (build propria do CEF, outro fork do MCEF,
   ou descodificacao nativa tipo libvlc/ffmpeg para a mesma textura), com custo,
   risco e licenciamento. **H.264 tem questoes de patentes** - hoje e uso pessoal,

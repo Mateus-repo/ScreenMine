@@ -1,0 +1,110 @@
+package dev.screenmine.diag;
+
+import dev.screenmine.Settings;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Diagnostic that reports which media codecs the embedded Chromium can actually
+ * decode.
+ *
+ * <p>This exists because "the video does not play" has several very different
+ * causes, and guessing between them wasted a run: Chromium built without
+ * proprietary codecs is the usual suspect, but it is only a hypothesis until
+ * the page itself is asked. {@code canPlayType} and
+ * {@code MediaSource.isTypeSupported} are answered by the browser, so they are
+ * the only source that settles it.
+ *
+ * <p>Off by default. Enable with {@code debug.codecs=1} in
+ * {@code config/screenmine.properties}, then load any page: the table lands in
+ * {@code latest.log} under the {@code ScreenMine/codecs} logger.
+ *
+ * <p>The report comes back through {@code document.title} because
+ * {@code CefBrowser.executeJavaScript} has no callback overload (verified with
+ * {@code javap}), so there is no way to get a return value out. The page agent
+ * already owns that channel for playback state; this borrows it with a separate
+ * {@value #PREFIX} marker.
+ */
+public final class CodecProbe {
+
+    private static final Logger LOG = LoggerFactory.getLogger("ScreenMine/codecs");
+
+    /** Marks a {@code document.title} payload that belongs to the probe. */
+    public static final String PREFIX = "SMX|";
+
+    /** Field separator inside the payload; not valid in any value we send. */
+    private static final char FIELD = '~';
+
+    private static boolean enabled;
+
+    private CodecProbe() {
+    }
+
+    /** True when the player asked for the probe in the settings file. */
+    public static boolean enabled() {
+        return enabled;
+    }
+
+    /**
+     * Reads the setting once. Called from client startup, before any browser
+     * exists.
+     */
+    public static void loadSetting() {
+        enabled = Settings.getInt("debug.codecs", 0) == 1;
+        if (enabled) {
+            LOG.info("codec probe ON - results appear below once a page has loaded");
+        }
+    }
+
+    /**
+     * The probe itself, as a JS expression evaluating to nothing.
+     *
+     * <p>Written as one expression rather than a function so it can be appended
+     * straight to the agent script. Every step is guarded: a page that has
+     * locked down {@code document.title}, or a browser without
+     * {@code MediaSource}, must not throw and take the agent down with it.
+     */
+    public static String script() {
+        return "(function(){try{"
+                + "var out=[];"
+                // canPlayType answers "" (no), "maybe" or "probably".
+                + "function cpt(mime){try{var v=document.createElement('video');"
+                + "return v.canPlayType(mime)||'-';}catch(e){return 'ERR';}}"
+                + "function mse(mime){try{return (window.MediaSource&&MediaSource.isTypeSupported(mime))?'yes':'no';}"
+                + "catch(e){return 'ERR';}}"
+                + "var codecs=[['avc1.42E01E','video/mp4; codecs=\"avc1.42E01E\"'],"
+                + "['avc1.64001F','video/mp4; codecs=\"avc1.64001F\"'],"
+                + "['mp4a.40.2','audio/mp4; codecs=\"mp4a.40.2\"'],"
+                + "['hev1','video/mp4; codecs=\"hev1\"'],"
+                + "['vp09.00.10.08','video/mp4; codecs=\"vp09.00.10.08\"'],"
+                + "['av01.0.05M.08','video/mp4; codecs=\"av01.0.05M.08\"'],"
+                + "['opus','audio/ogg; codecs=\"opus\"'],"
+                + "['vorbis','audio/ogg; codecs=\"vorbis\"']];"
+                + "for(var i=0;i<codecs.length;i++){var c=codecs[i];"
+                + "out.push(c[0]+'.canPlayType='+cpt(c[1]));"
+                + "out.push(c[0]+'.mse='+mse(c[1]));}"
+                + "out.push('MediaSource='+(window.MediaSource?'yes':'MISSING'));"
+                + "out.push('ua='+navigator.userAgent);"
+                + "out.push('secureContext='+(window.isSecureContext?'yes':'no'));"
+                + "document.title=\"" + PREFIX + "\"+out.join(\"~\");"
+                + "}catch(e){}})();";
+    }
+
+    /**
+     * Logs a payload that arrived through the title channel.
+     *
+     * <p>The table is printed one codec per line because a single {@code INFO}
+     * line that has to be read sideways past a log prefix is much worse to work
+     * with than a block.
+     */
+    public static void report(String payload) {
+        LOG.info("---- codec probe: {} ----", payload.replace(FIELD, ' '));
+        for (String field : payload.split(String.valueOf(FIELD))) {
+            if (!field.isBlank()) {
+                LOG.info("  {}", field);
+            }
+        }
+        LOG.info("---- end codec probe ----");
+    }
+}

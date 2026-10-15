@@ -24,6 +24,8 @@ import java.util.Properties;
  *       default: no address means the mod simply never opens a socket, which is
  *       the normal single-player case</li>
  *   <li>{@code server.port} — companion server port</li>
+ *   <li>{@code debug.codecs} — {@code 1} makes the browser report which media
+ *       codecs it can decode into the log; {@code 0} (the default) disables it</li>
  * </ul>
  */
 public final class Settings {
@@ -41,6 +43,11 @@ public final class Settings {
             # exactly the same either way.
             server.host=
             server.port=23481
+            #
+            # Diagnostics. Set debug.codecs to 1 and load any page to have the
+            # browser report which media codecs it can decode, into latest.log
+            # under the ScreenMine/codecs logger.
+            debug.codecs=0
             """;
 
     private static final Properties PROPS = new Properties();

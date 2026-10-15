@@ -306,10 +306,21 @@ private volatile boolean closed;
             return;
         }
         agentTicks = 0;
-        int frames = cef.getFrameCount();
-        if (frames != knownFrames) {
+        // Compare like with like. The injection records getFrameIdentifiers(),
+        // not getFrameCount(), and the two need not agree about the main frame.
+        int seen = frameIdentifiers(cef).size();
+        if (seen != knownFrames) {
             injectAgent();
-            LOGGER.info("frame set changed to {}, agent re-injected", frames);
+            LOGGER.info("frame set changed to {}, agent re-injected", seen);
+        }
+    }
+
+    private static Vector<String> frameIdentifiers(CefBrowser cef) {
+        try {
+            Vector<String> ids = cef.getFrameIdentifiers();
+            return ids == null ? new Vector<>() : ids;
+        } catch (RuntimeException ex) {
+            return new Vector<>();
         }
     }
 
@@ -326,9 +337,13 @@ private volatile boolean closed;
      */
     private static final int STATE_LOG_FIRST = 5;
     private static final int STATE_LOG_EVERY = 200;
+    /** How many ordinary title changes to print before going quiet. */
+    private static final int TITLE_LOG_FIRST = 5;
 
     private int stateReports;
     private boolean stateLoggedOnce;
+    /** Every title change seen, recognised or not. */
+    private int titleChanges;
 
     private static BrowserInstance lookup(CefBrowser b) {
         return b == null ? null : LIVE.get(b.getIdentifier());
@@ -358,6 +373,14 @@ private volatile boolean closed;
                 BrowserInstance self = lookup(b);
                 if (self == null || title == null) {
                     return;
+                }
+                // Every title change is counted, not just the ones we recognise.
+                // Five runs produced zero SM| receipts, and the only way to tell
+                // "the agent never writes the title" from "JCEF never tells us"
+                // is to know whether this callback fires at all.
+                self.titleChanges++;
+                if (self.titleChanges <= TITLE_LOG_FIRST) {
+                    LOGGER.info("onTitleChange #{} {}", self.titleChanges, title);
                 }
                 if (title.startsWith(STATE_PREFIX)) {
                     self.logStateReport(title);
@@ -429,16 +452,7 @@ private volatile boolean closed;
             return;
         }
         cef.executeJavaScript(code, cef.getURL(), 0);
-        Vector<String> ids;
-        try {
-            ids = cef.getFrameIdentifiers();
-        } catch (RuntimeException ex) {
-            LOGGER.warn("could not enumerate frames: {}", ex.toString());
-            return;
-        }
-        if (ids == null) {
-            return;
-        }
+        Vector<String> ids = frameIdentifiers(cef);
         int extra = 0;
         for (String id : ids) {
             if (extra >= MAX_FRAMES) {
@@ -452,9 +466,12 @@ private volatile boolean closed;
             frame.executeJavaScript(code, frame.getURL(), 0);
             extra++;
         }
-        if (extra > 0) {
-            knownFrames = ids.size();
-        }
+        // Always record the count, subframes or not. It used to be set only when
+        // extra > 0, so on a page with no subframes it stayed 0 while
+        // getFrameCount() said 1 - the watcher then saw a change every two
+        // seconds and re-injected forever. The 23:41 run did exactly that,
+        // 23 re-injections and 64 gain pushes for one screen.
+        knownFrames = ids.size();
     }
 
     /** Frame count seen at the last injection, so a change can be noticed. */

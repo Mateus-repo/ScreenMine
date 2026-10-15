@@ -11,6 +11,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.phys.Vec3;
 
@@ -27,6 +28,12 @@ import java.util.Map;
  * public path used by the render spike where this was proven in game.
  */
 public final class WorldScreenRenderer {
+
+    /**
+     * Fully lit: block-light and sky-light both at 15. {@code setLight} unpacks this
+     * into the two lightmap UVs.
+     */
+    private static final int FULL_BRIGHT = 0xF000F0;
 
     /** Stream id to the texture id its browser is registered under. */
     private final Map<String, Identifier> textureIds = new HashMap<>();
@@ -84,16 +91,15 @@ public final class WorldScreenRenderer {
         }
 
         RenderType type = RenderTypes.text(textureIdFor(s));
-        // TODO(port) RenderTypes.text is what the spike proved renders the page
-        // correctly, but it is lightmapped: at night the picture dims with the world.
-        // The spike's notes list entityTranslucentEmissive as the unlit alternative.
-        // Which one looks right at /time set midnight is a visual question, so the
-        // proven option stays until someone can look at it.
+        // RenderTypes.text is lightmapped, but every vertex is submitted with a
+        // full-bright lightmap, so the picture keeps its own brightness instead of
+        // dimming with the world. Whether that looks right next to a lit scene is a
+        // visual call, but it is no longer a missing feature.
         ctx.submitNodeCollector().submitCustomGeometry(pose, type, (p, buf) -> {
-            buf.addVertex(p, -hw, -hh, 0f).setUv(0f, 1f).setColor(0xFFFFFFFF);
-            buf.addVertex(p, hw, -hh, 0f).setUv(1f, 1f).setColor(0xFFFFFFFF);
-            buf.addVertex(p, hw, hh, 0f).setUv(1f, 0f).setColor(0xFFFFFFFF);
-            buf.addVertex(p, -hw, hh, 0f).setUv(0f, 0f).setColor(0xFFFFFFFF);
+            vertex(buf, p, -hw, -hh, 0f, 0f, 1f, 0xFFFFFFFF);
+            vertex(buf, p, hw, -hh, 0f, 1f, 1f, 0xFFFFFFFF);
+            vertex(buf, p, hw, hh, 0f, 1f, 0f, 0xFFFFFFFF);
+            vertex(buf, p, -hw, hh, 0f, 0f, 0f, 0xFFFFFFFF);
         });
 
         pose.popPose();
@@ -117,11 +123,11 @@ public final class WorldScreenRenderer {
         float hw = s.width / 2.0f + grow;
         float hh = s.height() / 2.0f + grow;
 
-        // TODO(port) RenderTypes.debugQuads is the vanilla render type for plain
-        // coloured quads and is the only public one that needs no texture. Its vertex
-        // format is built lazily so it cannot be confirmed with javap; if the frame
-        // comes out invisible or crashes the render thread, this is the line to
-        // change. Everything else here follows the spike's proven path.
+        // RenderTypes.debugQuads is the vanilla render type for plain coloured quads and
+        // needs no texture. Its vertex format is built lazily, so it could not be
+        // confirmed with javap; vertex() below submits every attribute and lets the
+        // builder drop the ones this format does not use, which makes the choice
+        // format-agnostic.
         RenderType type = RenderTypes.debugQuads();
 
         pose.pushPose();
@@ -147,11 +153,33 @@ public final class WorldScreenRenderer {
                      int r, int g, int b, int alpha) {
         final int col = (alpha << 24) | (r << 16) | (g << 8) | b;
         ctx.submitNodeCollector().submitCustomGeometry(pose, type, (p, buf) -> {
-            buf.addVertex(p, x0, y0, z).setColor(col);
-            buf.addVertex(p, x1, y0, z).setColor(col);
-            buf.addVertex(p, x1, y1, z).setColor(col);
-            buf.addVertex(p, x0, y1, z).setColor(col);
+            vertex(buf, p, x0, y0, z, 0f, 0f, col);
+            vertex(buf, p, x1, y0, z, 1f, 0f, col);
+            vertex(buf, p, x1, y1, z, 1f, 1f, col);
+            vertex(buf, p, x0, y1, z, 0f, 1f, col);
         });
+    }
+
+    /**
+     * One fully specified vertex.
+     *
+     * <p>Every attribute is set, not just the ones a particular {@link RenderType}
+     * happens to want. {@code BufferBuilder.beginElement} returns -1 for an element
+     * that is not part of the active format and the matching setter then skips the
+     * write, so this is correct for any format while a partial vertex is not:
+     * leaving out an attribute the format does require throws
+     * {@code IllegalStateException: Missing elements in vertex}, which is exactly
+     * how the first in-game run died.
+     */
+    private static void vertex(com.mojang.blaze3d.vertex.VertexConsumer buf,
+                               PoseStack.Pose p, float x, float y, float z,
+                               float u, float v, int colour) {
+        buf.addVertex(p, x, y, z)
+                .setColor(colour)
+                .setUv(u, v)
+                .setOverlay(OverlayTexture.NO_OVERLAY)
+                .setLight(FULL_BRIGHT)
+                .setNormal(0f, 1f, 0f);
     }
 
     /** Moves to the screen's own frame: camera-relative, then yaw. */

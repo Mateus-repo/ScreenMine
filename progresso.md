@@ -432,29 +432,31 @@ Checklist completa em baixo.
 - [ ] Build green: `./gradlew.bat build` -> `BUILD SUCCESSFUL`, 0 erros, 0 avisos
 - [ ] `push` da `port/26.3` sem timeout
 
+## Estado dos testes em jogo (running log)
+
+Cada corrida em jogo é um teste. Registo aqui o que cada uma provou, porque
+ate ao momento o build verde escondia tres bugs de render.
+
+| Corrida | Resultado | Ensina |
+|---|---|---|
+| spike/render | compilou, **nunca renderizou** | um spike verde nao prova que desenha |
+| 1o teste do port (11:28) | crash `Missing elements in vertex` | faltavam atributos no vertice |
+| 2o teste do port (11:39) | crash `textureView and sampler must both or neither be null` | o sampler tinha de seguir a vista |
+
+### Corrida 2 (11:39) - detalhes
+- **Confirmado em jogo:** a aba de teclas mostra **"ScreenMine"** (a correcao dos
+  `lang` funcionou e nunca mais precisa de se mexer); o browser arranca
+  (`CREATE url=https://www.youtube.com surface=1920x1080`).
+- **A correcao dos vertices funcionou:** o crash anterior desapareceu.
+- Novo crash, no `executeClassicTransparency`. Causa: `BrowserTexture.getSampler()`
+  devolvia sempre o sampler, mas `getTextureView()` e legitimamente `null` antes do
+  primeiro frame, depois de um resize e depois de `close()`. Como a geometria e
+  submetida com o browser vivo e desenhada instantes depois, fechar o browser no
+  meio (o `detach()` faz `browser.close()`; e o mesmo acontece ao sair do mundo)
+  deixava vista `null` com sampler posto.
+- Sintomas que explicava de uma vez: o ecra "desaparecer" e o crash ao remover
+  pelo menu.
+- Correcao: `getSampler()` devolve `null` sempre que a vista e `null`. E
+  `TextureManager.release(id)` quando um ecra e detached.
+
 ## Registo de sessoes
-- **2026-10-15 (tarde)** - **Port completo a compilar.** 434 -> 0 erros, 0 avisos.
-  Ordem: browser da spike -> `ScreenMineClient` (172->0) -> `ScreenWorld` + `PlacedScreen` (12->0)
-  -> `Hud` (19->0) -> `WorldScreenRenderer` (50->0). Render no mundo resolvido pelo
-  caminho do spike (`BrowserTexture` + `TextureManager.register` + `submitCustomGeometry`),
-  so com API publica. **Correcao de uma decisao anterior:** os `lang` precisavam mesmo da
-  chave `key.category.screenmine.main`, porque 26.3 removeu o construtor de `KeyMapping`
-  com `String` - sem isso a aba dos keybinds ficava sem rotulo.
-- **2026-10-15 (noite)** - **Primeiro teste do port completo: crashou.** E a primeira
-  vez que o port correu, e imediatamente provou que "build verde" nao era "funciona".
-  - Confirmado em jogo: a aba de teclas mostra **"ScreenMine"** (a correcao dos `lang`
-    funcionou) e o browser arranca (`CREATE url=https://www.youtube.com surface=1920x1080`).
-  - Crash: `IllegalStateException: Missing elements in vertex` em
-    `WorldScreenRenderer.lambda$drawScreen$0`. Causa: so passava posicao/UV/cor ao
-    vertice; o formato do `RenderTypes.text` pede mais elementos.
-  - **O spike tinha o mesmo bug.** Portanto nunca renderizou - so compilava. A
-    afirmacao de que estava "provado em jogo" estava errada e foi corrigida acima.
-    Licao: um spike verde nao prova que desenha nada.
-  - Correcao sem adivinhar o formato (e lazy, o `javap` nao o diz): no bytecode,
-    `BufferBuilder.setX` chama `beginElement`, que devolve `-1L` para um elemento
-    fora do formato, e o setter salta a escrita. Logo pode-se preencher sempre todos
-    os atributos. `vertex()` faz cor + UV + overlay + light + normal.
-  - Isso fechou os dois `TODO(port)` do `WorldScreenRenderer`: o formato do
-    `debugQuads` deixou de ser uma aposta, e o lightmap full-bright deixa de
-    escurecer a imagem a noite. `TODO(port)` no ficheiro: 2 -> 0.
-  - **Resta um `TODO(port)` em todo o mod:** o roubo de input no mundo.

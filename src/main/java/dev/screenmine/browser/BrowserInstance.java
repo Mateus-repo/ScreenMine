@@ -15,6 +15,7 @@ import com.mojang.renderpearl.api.textures.GpuTextureView;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.Map;
+import java.util.Vector;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -30,6 +31,13 @@ public final class BrowserInstance {
     private static final Logger LOGGER = LoggerFactory.getLogger("ScreenMine");
 
     private static final String STATE_PREFIX = "SM|";
+
+    /** Ticks to wait before the agent is injected without an onLoadEnd. */
+    private static final int AGENT_TICKS = 40;
+    /** How often to re-check whether the page's frame set changed, in ticks. */
+    private static final int FRAME_WATCH_TICKS = 40;
+    /** Ceiling on frames we will run JS in, so a hostile page cannot flood us. */
+    private static final int MAX_FRAMES = 16;
 
     /**
      * Injected once per page load. Twice a second it reports playback state
@@ -210,20 +218,41 @@ public final class BrowserInstance {
     private static boolean handlersInstalled;
 
     /**
-     * Injects the page agent as a fallback. A data: URL finishes loading before the
-     * CEF handlers are registered, so onLoadEnd never fires and the agent — which
-     * carries the editing shim — never runs. Retry once the page has settled.
+     * Makes sure the page agent is in every frame, however the page got there.
+     *
+     * <p>{@code onLoadEnd} normally does it, but it can be missed: the 12:41 run
+     * had no {@code ONLOADEND} at all, and the signature of that is an agent that
+     * never ran - no volume enforcement, no playback tracking, no editing shim,
+     * which is what the "N does nothing" report was.
+     *
+     * <p>It also watches the frame set afterwards. Frames come and go on a
+     * single-page app - an ad slot mounts, a player is replaced - and a frame
+     * that appears after the injection has no agent in it. The script is
+     * idempotent, so re-running it costs one no-op per live frame.
      */
     public void pumpAgent() {
-        if (agentInjected || browser == null) {
+        CefBrowser cef = cef();
+        if (cef == null) {
             return;
         }
-        if (++agentTicks < 40) {
+        if (!agentInjected) {
+            if (++agentTicks < AGENT_TICKS) {
+                return;
+            }
+            agentInjected = true;
+            injectAgent();
+            LOGGER.info("AGENT injected by retry (onLoadEnd never fired)");
             return;
         }
-        agentInjected = true;
-        injectAgent();
-        LOGGER.info("AGENT injected by retry (onLoadEnd never fired)");
+        if (++agentTicks < FRAME_WATCH_TICKS) {
+            return;
+        }
+        agentTicks = 0;
+        int frames = cef.getFrameCount();
+        if (frames != knownFrames) {
+            injectAgent();
+            LOGGER.info("frame set changed to {}, agent re-injected", frames);
+        }
     }
 
     /**
@@ -322,13 +351,56 @@ public final class BrowserInstance {
         return browser == null ? null : browser.getCefBrowser();
     }
 
-    /** Run JS in the page, ignoring failures. */
-    private void injectJavaScript(String code) {
+    /**
+     * Runs JS in every frame, not just the main one.
+     *
+     * <p>The page agent reports {@code document.querySelectorAll('video,audio')}
+     * from whichever document it was injected into, and the main document cannot
+     * see into an iframe at all. So an embedded player - which the mod already
+     * accepts as input, since {@code reportOwnedStreams} filters on
+     * {@code /embed/} - is invisible to the agent by construction, and every
+     * command sent only to the main frame misses it too.
+     *
+     * <p>{@code AGENT_JS} is idempotent ({@code if(window.__smAgent)return}),
+     * so broadcasting it is safe to repeat, which is what makes the frame-set
+     * watcher in {@link #pumpAgent()} harmless.
+     */
+    private void executeInAllFrames(String code) {
         CefBrowser cef = cef();
-        if (cef != null) {
-            cef.executeJavaScript(code, cef.getURL(), 0);
+        if (cef == null) {
+            return;
+        }
+        cef.executeJavaScript(code, cef.getURL(), 0);
+        Vector<String> ids;
+        try {
+            ids = cef.getFrameIdentifiers();
+        } catch (RuntimeException ex) {
+            LOGGER.warn("could not enumerate frames: {}", ex.toString());
+            return;
+        }
+        if (ids == null) {
+            return;
+        }
+        int extra = 0;
+        for (String id : ids) {
+            if (extra >= MAX_FRAMES) {
+                LOGGER.warn("page has more than {} frames, the rest are ignored", MAX_FRAMES);
+                break;
+            }
+            CefFrame frame = cef.getFrameByIdentifier(id);
+            if (frame == null || frame.isMain()) {
+                continue;
+            }
+            frame.executeJavaScript(code, frame.getURL(), 0);
+            extra++;
+        }
+        if (extra > 0) {
+            knownFrames = ids.size();
         }
     }
+
+    /** Frame count seen at the last injection, so a change can be noticed. */
+    private int knownFrames;
 
     private void injectAgent() {
         CefBrowser cef = cef();
@@ -338,7 +410,7 @@ public final class BrowserInstance {
             // should have been found in the main frame and something else is
             // wrong, 2 or more means the video is probably in an iframe.
             LOGGER.info("INJECT agent, frames={}, url={}", cef.getFrameCount(), cef.getURL());
-            cef.executeJavaScript(AGENT_JS, cef.getURL(), 0);
+            executeInAllFrames(AGENT_JS);
             // fresh page: whatever we pushed before is gone, so push it again
             appliedGain = -1.0;
             maybeProbeCodecs();
@@ -599,10 +671,7 @@ public final class BrowserInstance {
     }
 
     public void js(String code) {
-        CefBrowser cef = cef();
-        if (cef != null) {
-            cef.executeJavaScript(code, cef.getURL(), 0);
-        }
+        executeInAllFrames(code);
     }
 
     public void play() {

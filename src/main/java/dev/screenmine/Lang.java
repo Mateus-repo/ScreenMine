@@ -1,6 +1,7 @@
 package dev.screenmine;
 
 import java.util.HashMap;
+import java.util.IllegalFormatException;
 import java.util.Locale;
 import java.util.Map;
 
@@ -70,9 +71,24 @@ public final class Lang {
         return value != null ? value : key;
     }
 
-    /** {@link #t(String)} with {@link String#format} arguments. */
+    /**
+     * {@link #t(String)} with {@link String#format} arguments.
+     *
+     * <p>Guarded, because a mismatched {@code %} in a translation is a crash on
+     * the render thread or the client tick, and nothing would catch it before
+     * the player hit that button. Every key was audited - all 102 match their
+     * call sites today - but the guard is what stops the next one from being a
+     * crash report. Falling back to the unformatted string is ugly and harmless;
+     * an IllegalFormatException on the client tick is neither.
+     */
     public static String t(String key, Object... args) {
-        return String.format(Locale.ROOT, t(key), args);
+        String pattern = t(key);
+        try {
+            return String.format(Locale.ROOT, pattern, args);
+        } catch (IllegalFormatException ex) {
+            ScreenMineClient.LOG.warn("bad format string for '{}': {}", key, ex.toString());
+            return pattern;
+        }
     }
 
     // ------------------------------------------------------------ storage //

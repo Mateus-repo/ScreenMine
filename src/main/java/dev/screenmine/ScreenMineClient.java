@@ -279,6 +279,10 @@ public final class ScreenMineClient implements ClientModInitializer {
     private void handleKeys(Minecraft mc) {
         while (keyMenu.consumeClick()) {
             controlMode = false;
+            // Without this the browser keeps keyboard focus behind the menu.
+            // Nothing escapes (controlledBrowser() returns null while a screen
+            // is open) but it is only released later, in the overlay's onClose.
+            releaseBrowserFocus();
             mc.gui.setScreen(new MenuMain());
         }
         // Normally consumed by the input hook in onKey; this is the fallback for when the
@@ -289,6 +293,7 @@ public final class ScreenMineClient implements ClientModInitializer {
         while (keyBrowser.consumeClick()) {
             if (currentHit != null) {
                 controlMode = false;
+                releaseBrowserFocus();
                 mc.gui.setScreen(new dev.screenmine.gui.BrowserFullScreen(currentHit.screen()));
             } else {
                 // Say it instead of doing nothing: B is aimed at a screen, so pressing
@@ -546,18 +551,13 @@ public final class ScreenMineClient implements ClientModInitializer {
     // ------------------------------------------------------------- audio //
 
     /**
-     * Screens are quieter the further away you stand, and follow Minecraft's
-     * master volume. Recomputed a few times a second; the browser only gets a
-     * JS call when the value actually moved.
-     */
-    /**
      * Gives every placed screen a chance to install its page agent.
      *
-     * <p>The overlay has always done this from {@code BrowserFullScreen.tick()},
+     * <p>The overlay has always done this from {@code BrowserFullScreen.init()},
      * but that left the world with no agent at all when the overlay was closed:
-     * {@code applyGain} happily writes {@code window.__smVol} into a page with no
+     * {@code applyGain} writes {@code window.__smVol} into a page with no
      * interval reading it, so N reported "sound off" in chat and changed nothing.
-     * Same for the editing shim and playback tracking. OnLoadEnd normally covers
+     * Same for the editing shim and playback tracking. onLoadEnd normally covers
      * this, but it is a race, so the retry has to run wherever the browser lives.
      */
     private void pumpAgents() {
@@ -566,6 +566,11 @@ public final class ScreenMineClient implements ClientModInitializer {
         }
     }
 
+    /**
+     * Screens are quieter the further away you stand, and follow Minecraft's
+     * master volume. Recomputed a few times a second; the browser only gets a
+     * JS call when the value actually moved.
+     */
     private void tickAudio(Minecraft mc) {
         if (++audioTicker < Cfg.AUDIO_TICKS) {
             return;

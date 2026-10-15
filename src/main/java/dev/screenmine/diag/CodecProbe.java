@@ -20,15 +20,14 @@ import org.slf4j.LoggerFactory;
  * {@code config/screenmine.properties}, then load any page: the table lands in
  * {@code latest.log} under the {@code ScreenMine/codecs} logger.
  *
- * <p>The report comes back through the browser console, which
- * {@code CefDisplayHandler.onConsoleMessage} receives directly.
+ * /**
+ * {@code CefBrowser.executeJavaScript} has no callback overload, so there is no
+ * way to read a return value out. The console is the one channel that pushes
+ * back to us.
  *
- * <p>It was originally sent through {@code document.title}, because
- * {@code CefBrowser.executeJavaScript} has no callback overload (verified with
- * {@code javap}) and so there is no way to read a return value. That channel lost
- * the race: the page agent rewrites the title every 250ms, and the 2026-10-15
- * 12:47 run logged "codec probe ON" and then nothing at all. The console is a
- * push channel and does not have to win a race.
+ * <p>An earlier version sent the report through {@code document.title} and
+ * lost: the page agent rewrites the title every 250 ms, and the 2026-10-15 12:47
+ * run logged "codec probe ON" and then nothing at all.
  */
 public final class CodecProbe {
 
@@ -37,7 +36,10 @@ public final class CodecProbe {
     /** Marks a console message that belongs to a diagnostic. */
     public static final String PREFIX = "SMX|";
 
-    /** Marks the page agent's one-shot self report. */
+    /**
+     * Marks the page agent's self report. Emitted on every change of the media
+     * element count or of {@code __smVol}, not once.
+     */
     public static final String AGENT_PREFIX = "SMA|";
 
     /** Field separator inside the payload; not valid in any value we send. */
@@ -65,12 +67,13 @@ public final class CodecProbe {
     }
 
     /**
-     * The probe itself, as a JS expression evaluating to nothing.
+     * The probe itself, as a self-executing JS expression.
      *
-     * <p>Written as one expression rather than a function so it can be appended
-     * straight to the agent script. Every step is guarded: a page that has
-     * locked down {@code document.title}, or a browser without
-     * {@code MediaSource}, must not throw and take the agent down with it.
+     * <p>Run as its own {@code executeJavaScript}, not appended to the agent: it
+     * is a one-off measurement of the Chromium build and has to happen whether or
+     * not the page agent installs. Every step is guarded, so a page that has
+     * locked down {@code document}, or a browser without {@code MediaSource},
+     * cannot throw and take anything else with it.
      */
     public static String script() {
         return "(function(){try{"

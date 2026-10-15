@@ -25,12 +25,10 @@ public final class MenuJoinChoice extends Screen {
         this.parent = parent;
     }
 
-    /** So the session update can refresh this screen live. */
-    @Override
-    protected void rebuildWidgets() {
-        super.rebuildWidgets();
-    }
-    /** Public entry point; {@code rebuildWidgets} is protected in 26.3. */
+    /**
+     * Public entry point, so the session update can refresh this screen live.
+     * {@code rebuildWidgets} itself is protected in 26.3.
+     */
     public void refresh() {
         rebuildWidgets();
     }

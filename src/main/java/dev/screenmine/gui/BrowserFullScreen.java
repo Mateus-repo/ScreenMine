@@ -6,6 +6,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.renderpearl.api.textures.FilterMode;
 import com.mojang.renderpearl.api.textures.GpuSampler;
 import com.mojang.renderpearl.api.textures.GpuTextureView;
+import dev.screenmine.Cfg;
 import dev.screenmine.Lang;
 import dev.screenmine.world.PlacedScreen;
 import net.dimaskama.mcef.api.MCEFBrowser;
@@ -211,7 +212,10 @@ public final class BrowserFullScreen extends Screen {
         }
         LOG.info("IN scroll raw=({},{}) vertical={} px=({},{})",
                 mouseX, mouseY, vertical, px(mouseX), px(mouseY));
-        b.onMouseScrolled(px(mouseX), px(mouseY), vertical);
+        // Scaled like the world path does, so one notch scrolls the same amount
+        // in both. The overlay was passing the raw wheel delta and quietly
+        // ignoring Cfg.SCROLL_SPEED, which made the two disagree by 3x.
+        b.onMouseScrolled(px(mouseX), px(mouseY), vertical * Cfg.SCROLL_SPEED);
         return true;
     }
 

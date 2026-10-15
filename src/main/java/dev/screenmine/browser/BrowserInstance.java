@@ -105,7 +105,9 @@ public final class BrowserInstance {
         if (!MCEFApi.initialize().isDone()) {
             return false;
         }
+        LOGGER.info("CREATE url={} surface={}x{}", currentUrl, surfaceWidth, surfaceHeight);
         browser = MCEFApi.getInstance().createBrowser(currentUrl, false);
+        LOGGER.info("CREATED surface={}x{} textureView={}", surfaceWidth, surfaceHeight, browser.getTextureView() != null);
         browser.resize(surfaceWidth, surfaceHeight);
         installHandlersOnce(browser.getCefBrowser().getClient());
         LIVE.put(browser.getCefBrowser().getIdentifier(), this);
@@ -135,6 +137,7 @@ public final class BrowserInstance {
             public void onLoadEnd(CefBrowser b, CefFrame frame, int httpStatusCode) {
                 BrowserInstance self = lookup(b);
                 if (self != null) {
+                    LOGGER.info("ONLOADEND status={} url={} textureView={}", httpStatusCode, self.url(), self.textureView() != null);
                     self.injectAgent();
                 }
             }
@@ -265,12 +268,15 @@ public final class BrowserInstance {
 
     /** Resizes the off-screen surface. Used by the fullscreen browser view. */
     public void resize(int width, int height) {
-        if (width <= 0 || height <= 0 || (width == surfaceWidth && height == surfaceHeight)) {
+        int w0 = surfaceWidth, h0 = surfaceHeight;
+        if (width <= 0 || height <= 0) {
+            LOGGER.warn("REFUSING zero-size resize {}x{} - a browser with no size never paints", width, height);
             return;
         }
         surfaceWidth = width;
         surfaceHeight = height;
         if (browser != null) {
+            LOGGER.info("RESIZE {}x{} (was {}x{}) textureView={}", width, height, w0, h0, browser.getTextureView() != null);
             browser.resize(width, height);
         }
     }

@@ -1,11 +1,10 @@
 package dev.screenmine.gui;
 
-import com.mojang.blaze3d.platform.InputConstants;
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.platform.Window;
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.renderpearl.api.textures.FilterMode;
-import com.mojang.renderpearl.api.textures.GpuTextureView;
 import com.mojang.renderpearl.api.textures.GpuSampler;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
 import dev.screenmine.Lang;
 import dev.screenmine.world.PlacedScreen;
 import net.dimaskama.mcef.api.MCEFBrowser;
@@ -25,20 +24,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Fullscreen browser overlay.
+ * Fullscreen browser overlay, instrumented.
  *
- * <p>Ported to 26.3: the immediate-mode draw is gone (no {@code Tessellator}, no
- * {@code RenderSystem.setShaderTexture}), so the frame is pushed into
- * {@code guiRenderState} as a {@link BlitRenderState}, exactly as mcef-modern's
- * own testmod does. The texture is a {@code GpuTextureView} straight from the
- * browser, wrapped in a {@link TextureSetup}.
+ * <p>The previous run proved the keybinding and the overlay work, and that the
+ * browser loads a page, but nothing typed or clicked reached the page. Rather
+ * than guess, every input handler now logs, so a retest shows exactly which
+ * events arrive and with what values.
  */
 public final class BrowserFullScreen extends Screen {
 
-    private static final Logger LOG = LoggerFactory.getLogger("ScreenMine");
+    private static final Logger LOG = LoggerFactory.getLogger("ScreenMine/input");
 
     private final PlacedScreen screen;
     private final Screen parent;
+    private boolean sized;
 
     public BrowserFullScreen(PlacedScreen screen) {
         this(screen, null);
@@ -48,7 +47,19 @@ public final class BrowserFullScreen extends Screen {
         super(Component.literal("ScreenMine"));
         this.screen = screen;
         this.parent = parent;
+    }
+
+    @Override
+    protected void init() {
+        super.init();
+        screen.browser.ensureCreated();
         fitToWindow();
+        MCEFBrowser b = browser();
+        if (b != null) {
+            b.setFocus(true);
+        }
+        LOG.info("overlay opened, browser ready={} texture={}",
+                screen.browser.ready(), screen.browser.textureView() != null);
     }
 
     /**
@@ -61,6 +72,7 @@ public final class BrowserFullScreen extends Screen {
     private void fitToWindow() {
         Window w = Minecraft.getInstance().getWindow();
         screen.browser.resize(w.getWidth(), w.getHeight());
+        LOG.info("fit to window {}x{}", w.getWidth(), w.getHeight());
     }
 
     /** GUI-scaled coordinate to a real pixel, for the browser's mouse input. */
@@ -83,6 +95,11 @@ public final class BrowserFullScreen extends Screen {
             return;
         }
 
+        if (!sized) {
+            fitToWindow();
+            sized = true;
+        }
+
         GpuTextureView view = screen.browser.textureView();
         if (view != null) {
             GpuSampler sampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
@@ -96,7 +113,6 @@ public final class BrowserFullScreen extends Screen {
                     gfx.scissorStack.peek()));
         }
 
-        // Let the page pick the OS cursor shape; it no longer steals the grab.
         MCEFBrowser b = browser();
         if (b != null && b.getCursorType() != null) {
             gfx.requestCursor(b.getCursorType());
@@ -110,7 +126,9 @@ public final class BrowserFullScreen extends Screen {
     @Override
     public void resize(int w, int h) {
         super.resize(w, h);
-        fitToWindow();
+        if (screen.browser.ready()) {
+            fitToWindow();
+        }
     }
 
     // ----------------------------------------------------------------- input //
@@ -118,22 +136,25 @@ public final class BrowserFullScreen extends Screen {
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
         MCEFBrowser b = browser();
-        if (b != null) {
-            b.onMouseClicked(event, doubled);
-            b.setFocus(true);
-            return true;
+        if (b == null) {
+            return super.mouseClicked(event, doubled);
         }
-        return super.mouseClicked(event, doubled);
+        LOG.info("IN mouseClicked btn={} doubled={} x={} y={}",
+                event.button(), doubled, px(event.x()), px(event.y()));
+        b.onMouseClicked(event, doubled);
+        b.setFocus(true);
+        return true;
     }
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
         MCEFBrowser b = browser();
-        if (b != null) {
-            b.onMouseReleased(event);
-            return true;
+        if (b == null) {
+            return super.mouseReleased(event);
         }
-        return super.mouseReleased(event);
+        LOG.info("IN mouseReleased btn={}", event.button());
+        b.onMouseReleased(event);
+        return true;
     }
 
     @Override
@@ -158,54 +179,54 @@ public final class BrowserFullScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
         MCEFBrowser b = browser();
-        if (b != null) {
-            b.onMouseScrolled(px(mouseX), px(mouseY), vertical);
-            return true;
+        if (b == null) {
+            return super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
         }
-        return super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
+        LOG.info("IN scroll vertical={}", vertical);
+        b.onMouseScrolled(px(mouseX), px(mouseY), vertical);
+        return true;
     }
 
     @Override
     public boolean keyPressed(KeyEvent event) {
-        // Esc always closes the overlay. Uses the vanilla helper rather than the
-        // old GLFW 256: the 26.3 backend is SDL.
         if (event.isEscape()) {
             onClose();
             return true;
         }
         MCEFBrowser b = browser();
-        if (b != null) {
-            b.onKeyPressed(event);
-            b.setFocus(true);
-            return true;
+        if (b == null) {
+            return super.keyPressed(event);
         }
-        return super.keyPressed(event);
+        LOG.info("IN keyPressed key={} keycode={} mods={}", event.key(), event.keycode(), event.modifiers());
+        b.onKeyPressed(event);
+        b.setFocus(true);
+        return true;
     }
 
     @Override
     public boolean keyReleased(KeyEvent event) {
         MCEFBrowser b = browser();
-        if (b != null) {
-            b.onKeyReleased(event);
-            return true;
+        if (b == null) {
+            return super.keyReleased(event);
         }
-        return super.keyReleased(event);
+        LOG.info("IN keyReleased key={}", event.key());
+        b.onKeyReleased(event);
+        return true;
     }
 
     @Override
     public boolean charTyped(CharacterEvent event) {
-        // Separate from keyPressed on purpose: text needs the character events,
-        // not the key events, or accented input and IME composition break.
         if (event.codepoint() == 0) {
             return false;
         }
         MCEFBrowser b = browser();
-        if (b != null) {
-            b.onCharTyped(event);
-            b.setFocus(true);
-            return true;
+        if (b == null) {
+            return super.charTyped(event);
         }
-        return super.charTyped(event);
+        LOG.info("IN charTyped cp={} '{}'", event.codepoint(), event.codepointAsString());
+        b.onCharTyped(event);
+        b.setFocus(true);
+        return true;
     }
 
     @Override
@@ -215,9 +236,7 @@ public final class BrowserFullScreen extends Screen {
             b.setFocus(false);
         }
         screen.browser.resetSurface();
-        // Was ScreenMineClient#get().onLocalNavigate(...) in the full port. The
-        // sync layer does not exist on this spike branch, so just record it.
-        LOG.info("closed overlay for stream {} at {}", screen.streamId, screen.browser.url());
+        LOG.info("overlay closed for stream {} at {}", screen.streamId, screen.browser.url());
         minecraft.gui.setScreen(parent);
     }
 

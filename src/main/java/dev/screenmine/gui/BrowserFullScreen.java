@@ -139,8 +139,10 @@ public final class BrowserFullScreen extends Screen {
         if (b == null) {
             return super.mouseClicked(event, doubled);
         }
-        LOG.info("IN mouseClicked btn={} doubled={} x={} y={}",
-                event.button(), doubled, px(event.x()), px(event.y()));
+        LOG.info("IN mouseClicked btn={} doubled={} raw=({},{}) px=({},{}) scale={}",
+                event.button(), doubled, event.x(), event.y(),
+                px(event.x()), px(event.y()),
+                Minecraft.getInstance().getWindow().getGuiScale());
         b.onMouseClicked(event, doubled);
         b.setFocus(true);
         return true;
@@ -161,6 +163,7 @@ public final class BrowserFullScreen extends Screen {
     public void mouseMoved(double mouseX, double mouseY) {
         MCEFBrowser b = browser();
         if (b != null) {
+            LOG.info("IN mouseMoved px=({},{})", px(mouseX), px(mouseY));
             b.onMouseMoved(px(mouseX), px(mouseY));
         }
         super.mouseMoved(mouseX, mouseY);
@@ -182,7 +185,8 @@ public final class BrowserFullScreen extends Screen {
         if (b == null) {
             return super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
         }
-        LOG.info("IN scroll vertical={}", vertical);
+        LOG.info("IN scroll raw=({},{}) vertical={} px=({},{})",
+                mouseX, mouseY, vertical, px(mouseX), px(mouseY));
         b.onMouseScrolled(px(mouseX), px(mouseY), vertical);
         return true;
     }

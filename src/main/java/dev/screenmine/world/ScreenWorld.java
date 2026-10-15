@@ -44,15 +44,15 @@ public final class ScreenWorld {
             return existing;
         }
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.world == null) {
+        if (mc.player == null || mc.level == null) {
             return null;
         }
         Entity p = mc.player;
         Vec3 eye = p.getEyePosition();
         Vec3 look = p.getLookAngle();
-        Vec3 pos = eye.add(look.multiply(Cfg.SPAWN_DISTANCE));
+        Vec3 pos = eye.add(look.scale(Cfg.SPAWN_DISTANCE));
         // Face the player: the screen normal is the opposite of the player's look.
-        float yaw = p.getYaw() + 180.0f;
+        float yaw = p.getYRot() + 180.0f;
 
         BrowserInstance browser = new BrowserInstance(streamId, url);
         PlacedScreen screen = new PlacedScreen(
@@ -76,10 +76,10 @@ public final class ScreenWorld {
     }
 
     public static String dimensionOf(Minecraft mc) {
-        if (mc.world == null) {
+        if (mc.level == null) {
             return "";
         }
-        return mc.world.dimension().getValue().toString();
+        return mc.level.dimension().identifier().toString();
     }
 
     /** Screens in the player's current dimension, nearest first. */
@@ -107,7 +107,7 @@ public final class ScreenWorld {
 
     /** The screen the player is currently looking at, if any. */
     public Hit pick(Minecraft mc) {
-        if (mc.player == null || mc.world == null) {
+        if (mc.player == null || mc.level == null) {
             return null;
         }
         Vec3 origin = mc.player.getEyePosition();
@@ -141,8 +141,8 @@ public final class ScreenWorld {
             if (!s.moving) {
                 continue;
             }
-            s.pos = eye.add(look.multiply(s.moveDistance));
-            s.yaw = mc.player.getYaw() + 180.0f;
+            s.pos = eye.add(look.scale(s.moveDistance));
+            s.yaw = mc.player.getYRot() + 180.0f;
             s.dimension = dimensionOf(mc);
         }
     }

@@ -92,20 +92,20 @@ public final class PlacedScreen {
      */
     public double[] raycast(Vec3 origin, Vec3 dir, double maxDistance) {
         Vec3 n = normal();
-        double denom = dir.dotProduct(n);
+        double denom = dir.dot(n);
         if (Math.abs(denom) < 1.0e-6) {
             return null;
         }
-        double t = pos.subtract(origin).dotProduct(n) / denom;
+        double t = pos.subtract(origin).dot(n) / denom;
         if (t <= 0.0 || t > maxDistance) {
             return null;
         }
-        Vec3 hit = origin.add(dir.multiply(t));
+        Vec3 hit = origin.add(dir.scale(t));
         Vec3 local = hit.subtract(pos);
 
         double hw = width / 2.0;
         double hh = height() / 2.0;
-        double u = local.dotProduct(right()) / (2.0 * hw) + 0.5;
+        double u = local.dot(right()) / (2.0 * hw) + 0.5;
         double v = 0.5 - local.y / (2.0 * hh);
         if (u < 0.0 || u > 1.0 || v < 0.0 || v > 1.0) {
             return null;

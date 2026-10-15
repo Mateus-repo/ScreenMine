@@ -247,6 +247,10 @@ public final class BrowserFullScreen extends Screen {
             return super.keyPressed(event);
         }
         LOG.info("IN keyPressed {} mods={}", keyName(event), event.modifiers());
+        // Alt+Left / Alt+Right are browser history, which no page script can do.
+        if (screen.browser.handleShortcut(event)) {
+            return true;
+        }
         b.onKeyPressed(event);
         b.setFocus(true);
         return true;

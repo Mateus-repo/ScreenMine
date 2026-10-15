@@ -3,8 +3,10 @@ package dev.screenmine.browser;
 
 import dev.screenmine.Cfg;
 import dev.screenmine.diag.CodecProbe;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.dimaskama.mcef.api.MCEFApi;
 import net.dimaskama.mcef.api.MCEFBrowser;
+import net.minecraft.client.input.KeyEvent;
 import org.cef.browser.CefBrowser;
 import org.cef.browser.CefFrame;
 import org.cef.handler.CefDisplayHandlerAdapter;
@@ -40,7 +42,57 @@ public final class BrowserInstance {
     private static final int MAX_FRAMES = 16;
 
     /**
-     * Injected once per page load. Twice a second it reports playback state
+     * Editing shim, injected with the rest of the agent.
+     *
+     * <p>JCEF's off-screen path delivers every {@code KEY_PRESSED} to Blink as a
+     * {@code RAWKEYDOWN}, and raw keydowns deliberately do not trigger the
+     * browser's default editing actions. Page {@code keydown} listeners do see
+     * the event - the page just never acts on it. So Backspace, Delete, the
+     * caret keys and every Ctrl shortcut arrive and do nothing. Known upstream
+     * as DimasKama/mcef-modern#4, still open, and PR #5 explicitly does not fix
+     * it. Delete this the day that lands.
+     *
+     * <p>It lives in the agent rather than in Java on purpose: it runs in the
+     * frame that actually holds focus, which after the all-frames change may be
+     * a subframe, and it sees the event before Minecraft has to know anything
+     * about modifiers.
+     *
+     * <p>Ctrl+C is handled outside the editable check on purpose. Copying a
+     * selection on a page - text, a line of code - has no focused field to
+     * detect, and that is the case that was reported as broken.
+     */
+    private static final String EDIT_SHIM_JS =
+            "(function(){if(window.__smEdit)return;window.__smEdit=1;" +
+            "function ed(e){var t=e.target;return !!(t&&(t.isContentEditable||t.tagName==='INPUT'||t.tagName==='TEXTAREA'));}" +
+            "function set(t,a,b){try{t.setSelectionRange(a,b);}catch(x){}}" +
+            "function cmd(n){try{return document.execCommand(n);}catch(x){return false;}}" +
+            "function typed(t){t.dispatchEvent(new Event('input',{bubbles:true}));}" +
+            "document.addEventListener('keydown',function(e){" +
+            "var t=e.target,k=(e.key||'').toLowerCase(),mod=e.ctrlKey||e.metaKey;" +
+            // copy works on a page selection too, not just inside a field
+            "if(mod&&!e.altKey&&k==='c'){e.preventDefault();cmd('copy');return;}" +
+            "if(!ed(e))return;" +
+            "var s=t.selectionStart,n=t.selectionEnd,v=t.value==null?'':t.value;" +
+            "if(mod&&!e.altKey){" +
+            "if(k==='a'){e.preventDefault();set(t,0,v.length);typed(t);return;}" +
+            "if(k==='v'){e.preventDefault();cmd('paste');typed(t);return;}" +
+            "if(k==='x'){e.preventDefault();cmd('cut');typed(t);return;}" +
+            "if(k==='z'&&!e.shiftKey){e.preventDefault();cmd('undo');typed(t);return;}" +
+            "if((k==='z'&&e.shiftKey)||k==='y'){e.preventDefault();cmd('redo');typed(t);return;}" +
+            "return;}" +
+            "if(k==='backspace'){if(s!==n){t.setRangeText('',s,n,'end');}else if(s>0){t.setRangeText('',s-1,s,'end');}e.preventDefault();}" +
+            "else if(k==='delete'){if(s!==n){t.setRangeText('',s,n,'end');}else if(n<v.length){t.setRangeText('',n,n+1,'end');}e.preventDefault();}" +
+            // bare arrows only: with a modifier the browser may want them for
+            // something else, and the history shortcut is handled in Java
+            "else if(e.key==='ArrowLeft'&&!mod&&!e.altKey){if(s===n&&s>0)set(t,s-1,s-1);e.preventDefault();}" +
+            "else if(e.key==='ArrowRight'&&!mod&&!e.altKey){if(s===n&&n<v.length)set(t,n+1,n+1);e.preventDefault();}" +
+            "else if(e.key==='Home'&&!mod){set(t,0,0);e.preventDefault();}" +
+            "else if(e.key==='End'&&!mod){set(t,v.length,v.length);e.preventDefault();}" +
+            "else return;" +
+            "typed(t);},true);})();";
+
+    /**
+     * Injected once per page load. Four times a second it reports playback state
      * through the window title and enforces the volume the mod asked for —
      * enforcing on a timer is what makes it survive YouTube's SPA navigation.
      */
@@ -53,23 +105,7 @@ public final class BrowserInstance {
             "var h=document.querySelector('h1.ytd-watch-metadata,h1.title');" +
             "if(h&&h.innerText)return h.innerText;return window.__smBase||'';}" +
             "window.__smBase=document.title;" +
-            // --- editing shim -------------------------------------------------
-            // JCEF's OSR path only ever delivers KEY_PRESSED as a RAWKEYDOWN, so
-            // Blink's default editing actions (Backspace, Delete, caret movement)
-            // never fire, even though keydown listeners in the page do see the
-            // event. Known upstream: DimasKama/mcef-modern#4, still open, and PR
-            // #5 explicitly does not fix it. Remove this once that is resolved.
-            "(function(){if(window.__smEdit)return;window.__smEdit=1;" +
-            "function ed(e){var t=e.target;return t&&(t.isContentEditable||t.tagName==='INPUT'||t.tagName==='TEXTAREA');}" +
-            "function set(e,a,b){var t=e.target;try{t.setSelectionRange(a,b);}catch(x){}}" +
-            "document.addEventListener('keydown',function(e){if(!ed(e))return;var t=e.target,s=t.selectionStart,n=t.selectionEnd,v=t.value;" +
-            "if(e.key==='Backspace'){if(s!==n){t.setRangeText('',s,n,'end');}else if(s>0){t.setRangeText('',s-1,s,'end');}e.preventDefault();}" +
-            "else if(e.key==='Delete'){if(s!==n){t.setRangeText('',s,n,'end');}else if(n<v.length){t.setRangeText('',n,n+1,'end');}e.preventDefault();}" +
-            "else if(e.key==='ArrowLeft'){if(s===n&&s>0)set(e,s-1,s-1);e.preventDefault();}" +
-            "else if(e.key==='ArrowRight'){if(s===n&&n<v.length)set(e,n+1,n+1);e.preventDefault();}" +
-            "else if(e.key==='Home'){set(e,0,0);e.preventDefault();}" +
-            "else if(e.key==='End'){set(e,v.length,v.length);e.preventDefault();}" +
-            "t.dispatchEvent(new Event('input',{bubbles:true}));},true);})();" +
+            EDIT_SHIM_JS +
             "var lastMedia=-1,lastVol=-1;" +
             "setInterval(function(){try{" +
             "var all=document.querySelectorAll('video,audio');" +
@@ -732,6 +768,42 @@ private volatile boolean closed;
         if (cef != null) {
             cef.reload();
         }
+    }
+
+    /**
+     * Browser-level shortcuts that script cannot do.
+     *
+     * <p>History is the reason this exists. {@code Ctrl+A/C/V/X/Z/Y} are handled
+     * in the page's editing shim, where the focused frame is known and the
+     * modifier state is already in hand, but back and forward are properties of
+     * the browser, not of a document. {@link CefBrowser#goBack} and
+     * {@link CefBrowser#goForward} are public API and were verified with javap,
+     * so no mixin is involved.
+     *
+     * @return true when the event was consumed and must not reach the page
+     */
+    public boolean handleShortcut(KeyEvent event) {
+        CefBrowser cef = cef();
+        if (cef == null || event == null) {
+            return false;
+        }
+        // InputWithModifiers already answers these, verified with javap; they know
+        // about the control-side quirk that a raw mask comparison would miss.
+        // There is no hasSuperDown, so the Windows key is not screened out - it
+        // is not bound to anything the browser acts on.
+        if (event.hasAltDown() && !event.hasControlDown() && !event.hasShiftDown()) {
+            if (event.key() == InputConstants.KEY_LEFT) {
+                goBack();
+                return true;
+            }
+            if (event.key() == InputConstants.KEY_RIGHT) {
+                if (cef.canGoForward()) {
+                    cef.goForward();
+                }
+                return true;
+            }
+        }
+        return false;
     }
 
     public void goBack() {

@@ -112,8 +112,20 @@ public final class BrowserInstance {
 
     public final String streamId;
 
-    private MCEFBrowser browser;
-    private boolean closed;
+    /*
+ * Threading.
+ *
+ * <p>Two threads touch this object. The client tick owns position, audio,
+ * playback commands and lifecycle; the CEF UI thread owns the handlers and
+ * writes through parseState and onLoadEnd. Every field below is read on one
+ * thread and written on the other, so it is volatile - without it the JMM does
+ * not promise the write is visible, and the failure mode is a rare bug that
+ * reproduces once a month. The playback fields below were already volatile;
+ * these are the ones that were not.
+ */
+
+private volatile MCEFBrowser browser;
+private volatile boolean closed;
 
     /** Latest values reported by the page. */
     private volatile double playbackTime = -1;
@@ -125,20 +137,30 @@ public final class BrowserInstance {
     private volatile String pageTitle = "";
     private volatile String currentUrl;
 
-    /** Set while we apply a remote command, so we do not echo it back. */
-    private boolean applyingRemote;
+    /**
+     * Set while a remote navigation is being applied.
+     *
+     * <p>Honest caveat: this does not do what it looks like it does.
+     * {@link CefBrowser#loadURL} is asynchronous and {@code onAddressChange}
+     * arrives milliseconds later, long after this flag is back to false, so it
+     * never actually suppresses the echo. What does suppress it is the
+     * {@code sameVideo} comparison in {@code onLocalNavigate}. Kept volatile
+     * because it is genuinely read on the CEF thread, and kept because removing
+     * it would change behaviour that currently happens to work.
+     */
+    private volatile boolean applyingRemote;
 
     /** Current off-screen size; the fullscreen view temporarily changes it. */
     private int surfaceWidth = Cfg.BROWSER_WIDTH;
     private int surfaceHeight = Cfg.BROWSER_HEIGHT;
 
     /** Last gain actually pushed into the page, 0..1; -1 means "unknown". */
-    private double appliedGain = -1.0;
+    private volatile double appliedGain = -1.0;
     /** Fallback agent injection: frames waited, and whether it already ran. */
     private int agentTicks;
-    private boolean agentInjected;
+    private volatile boolean agentInjected;
     /** Codec support is per Chromium build, so the probe runs once per browser. */
-    private boolean probeRan;
+    private volatile boolean probeRan;
 
     public BrowserInstance(String streamId, String url) {
         this.streamId = streamId;
@@ -400,7 +422,7 @@ public final class BrowserInstance {
     }
 
     /** Frame count seen at the last injection, so a change can be noticed. */
-    private int knownFrames;
+    private volatile int knownFrames;
 
     private void injectAgent() {
         CefBrowser cef = cef();

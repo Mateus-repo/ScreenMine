@@ -284,6 +284,10 @@ public final class ScreenMineClient implements ClientModInitializer {
             if (currentHit != null) {
                 controlMode = false;
                 mc.gui.setScreen(new dev.screenmine.gui.BrowserFullScreen(currentHit.screen()));
+            } else {
+                // Say it instead of doing nothing: B is aimed at a screen, so pressing
+                // it while looking at grass looks exactly like a broken keybind.
+                chat(Component.literal(Lang.t("chat.aim")).withStyle(ChatFormatting.GRAY));
             }
         }
         while (keyMove.consumeClick()) {

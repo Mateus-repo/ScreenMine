@@ -1,24 +1,35 @@
 package dev.screenmine.render;
 
-import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.math.Axis;
+import dev.screenmine.Cfg;
 import dev.screenmine.ScreenMineClient;
+import dev.screenmine.browser.BrowserInstance;
 import dev.screenmine.world.PlacedScreen;
 import dev.screenmine.world.ScreenWorld;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.RenderPipelines;
-import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.MeshData;
-import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.renderpearl.api.vertex.VertexFormat;
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import com.mojang.blaze3d.vertex.PoseStack;
-import net.minecraft.util.math.RotationAxis;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.phys.Vec3;
-import org.joml.Matrix4f;
 
-/** Draws every placed screen as a textured quad in the world. */
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Draws every placed screen as a textured quad in the world.
+ *
+ * <p>26.3 deleted {@code Tessellator}, {@code BufferBuilder} and
+ * {@code BufferRenderer}, and render state moved off {@code RenderSystem} into
+ * render pipelines, so the old immediate-mode code could not be ported line by
+ * line. Geometry now goes through the level submit-node collector, the same
+ * public path used by the render spike where this was proven in game.
+ */
 public final class WorldScreenRenderer {
+
+    /** Stream id to the texture id its browser is registered under. */
+    private final Map<String, Identifier> textureIds = new HashMap<>();
 
     private final ScreenWorld world;
 
@@ -26,14 +37,14 @@ public final class WorldScreenRenderer {
         this.world = world;
     }
 
-    public void render(WorldRenderContext ctx) {
+    public void render(LevelRenderContext ctx) {
         Minecraft mc = Minecraft.getInstance();
-        PoseStack matrices = ctx.matrixStack();
-        if (matrices == null || mc.world == null) {
+        PoseStack pose = ctx.poseStack();
+        if (mc.level == null || mc.player == null) {
             return;
         }
         String dim = ScreenWorld.dimensionOf(mc);
-        Vec3 cam = ctx.camera().getPos();
+        Vec3 cam = ctx.levelState().cameraRenderState.pos;
 
         ScreenWorld.Hit hit = ScreenMineClient.get().currentHit();
         PlacedScreen highlighted = hit == null ? null : hit.screen();
@@ -42,113 +53,128 @@ public final class WorldScreenRenderer {
             if (!screen.dimension.equals(dim)) {
                 continue;
             }
-            // The browser is created lazily, on the render thread.
+            // The browser is created lazily; until it has a frame we show the plate.
             if (!screen.browser.ensureCreated() || !screen.browser.ready()) {
-                drawPlaceholder(matrices, cam, screen);
+                drawSolid(ctx, pose, cam, screen, 16, 16, 20, 220, -1, 0);
                 continue;
             }
-            drawScreen(matrices, cam, screen, screen == highlighted || screen.moving);
+            drawScreen(ctx, pose, cam, screen, screen == highlighted || screen.moving);
         }
     }
 
-    private void drawScreen(PoseStack matrices, Vec3 cam, PlacedScreen s, boolean highlight) {
+    private void drawScreen(LevelRenderContext ctx, PoseStack pose, Vec3 cam,
+                            PlacedScreen s, boolean highlight) {
         float hw = s.width / 2.0f;
         float hh = s.height() / 2.0f;
 
-        matrices.push();
-        matrices.translate(s.pos.x - cam.x, s.pos.y - cam.y, s.pos.z - cam.z);
-        matrices.multiply(Axis.POSITIVE_Y.rotationDegrees(-s.yaw));
-        Matrix4f m = matrices.peek().getPositionMatrix();
+        pushAt(pose, cam, s);
 
-        drawBacking(m, hw, hh, highlight);
-
-        // Opaque, depth-writing draw. Without depthMask the clouds drawn later
-        // pass the depth test and paint straight over the picture.
-        RenderSystem.disableBlend();
-        RenderSystem.enableDepthTest();
-        RenderSystem.depthMask(true);
-        RenderSystem.disableCull();
-        RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-        RenderSystem.setShaderTexture(0, s.browser.textureId());
-
-        BufferBuilder t = BufferBuilder.getInstance();
-        BufferBuilder b = t.begin(VertexFormat.DrawMode.QUADS, DefaultVertexFormat.POSITION_TEXTURE_COLOR);
-        b.vertex(m, -hw, -hh, 0f).texture(0f, 1f).color(255, 255, 255, 255);
-        b.vertex(m, hw, -hh, 0f).texture(1f, 1f).color(255, 255, 255, 255);
-        b.vertex(m, hw, hh, 0f).texture(1f, 0f).color(255, 255, 255, 255);
-        b.vertex(m, -hw, hh, 0f).texture(0f, 0f).color(255, 255, 255, 255);
-        BufferRenderer.drawWithGlobalProgram(b.end());
-
-        RenderSystem.setShaderTexture(0, 0);
-        RenderSystem.enableCull();
-        matrices.pop();
-    }
-
-    private void drawPlaceholder(PoseStack matrices, Vec3 cam, PlacedScreen s) {
-        float hw = s.width / 2.0f;
-        float hh = s.height() / 2.0f;
-        matrices.push();
-        matrices.translate(s.pos.x - cam.x, s.pos.y - cam.y, s.pos.z - cam.z);
-        matrices.multiply(Axis.POSITIVE_Y.rotationDegrees(-s.yaw));
-        Matrix4f m = matrices.peek().getPositionMatrix();
-
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
-
-        BufferBuilder t = BufferBuilder.getInstance();
-        BufferBuilder b = t.begin(VertexFormat.DrawMode.QUADS, DefaultVertexFormat.POSITION_COLOR);
-        quad(b, m, -hw, -hh, hw, hh, 0f, 16, 16, 20, 220);
-        BufferRenderer.drawWithGlobalProgram(b.end());
-
-        RenderSystem.enableCull();
-        RenderSystem.disableBlend();
-        matrices.pop();
-    }
-
-    /** Opaque plate behind the picture, plus an optional bezel around it. */
-    private void drawBacking(Matrix4f m, float hw, float hh, boolean highlight) {
-        boolean bezel = dev.screenmine.Cfg.DRAW_FRAME
-                        || (highlight && dev.screenmine.Cfg.HIGHLIGHT_AIMED);
-        if (!dev.screenmine.Cfg.OPAQUE_BACKGROUND && !bezel) {
-            return;
-        }
-        RenderSystem.disableBlend();
-        RenderSystem.enableDepthTest();
-        RenderSystem.depthMask(true);
-        RenderSystem.disableCull();
-        RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
-
-        BufferBuilder t = BufferBuilder.getInstance();
-        BufferBuilder b = t.begin(VertexFormat.DrawMode.QUADS, DefaultVertexFormat.POSITION_COLOR);
-        float o = dev.screenmine.Cfg.FRAME_THICKNESS;
-        float z = -0.002f;
-
-        if (bezel) {
+        boolean bezel = Cfg.DRAW_FRAME || (highlight && Cfg.HIGHLIGHT_AIMED);
+        if (Cfg.OPAQUE_BACKGROUND || bezel) {
             int r = highlight ? 90 : 20;
             int g = highlight ? 200 : 20;
-            int bl = highlight ? 255 : 24;
-            quad(b, m, -hw - o, hh, hw + o, hh + o, z, r, g, bl, 255);
-            quad(b, m, -hw - o, -hh - o, hw + o, -hh, z, r, g, bl, 255);
-            quad(b, m, -hw - o, -hh, -hw, hh, z, r, g, bl, 255);
-            quad(b, m, hw, -hh, hw + o, hh, z, r, g, bl, 255);
+            int b = highlight ? 255 : 24;
+            if (bezel) {
+                float o = Cfg.FRAME_THICKNESS;
+                drawSolid(ctx, pose, cam, s, r, g, b, 255, 0, -1, o);
+            }
+            if (Cfg.OPAQUE_BACKGROUND) {
+                drawSolid(ctx, pose, cam, s, 0, 0, 0, 255, -0.002f, 0);
+            }
         }
-        if (dev.screenmine.Cfg.OPAQUE_BACKGROUND) {
-            quad(b, m, -hw, -hh, hw, hh, z, 0, 0, 0, 255);
-        }
-        BufferRenderer.drawWithGlobalProgram(b.end());
 
-        RenderSystem.enableCull();
+        RenderType type = RenderTypes.text(textureIdFor(s));
+        // TODO(port) RenderTypes.text is what the spike proved renders the page
+        // correctly, but it is lightmapped: at night the picture dims with the world.
+        // The spike's notes list entityTranslucentEmissive as the unlit alternative.
+        // Which one looks right at /time set midnight is a visual question, so the
+        // proven option stays until someone can look at it.
+        ctx.submitNodeCollector().submitCustomGeometry(pose, type, (p, buf) -> {
+            buf.addVertex(p, -hw, -hh, 0f).setUv(0f, 1f).setColor(0xFFFFFFFF);
+            buf.addVertex(p, hw, -hh, 0f).setUv(1f, 1f).setColor(0xFFFFFFFF);
+            buf.addVertex(p, hw, hh, 0f).setUv(1f, 0f).setColor(0xFFFFFFFF);
+            buf.addVertex(p, -hw, hh, 0f).setUv(0f, 0f).setColor(0xFFFFFFFF);
+        });
+
+        pose.popPose();
     }
 
-    private static void quad(BufferBuilder b, Matrix4f m,
-                             float x0, float y0, float x1, float y1, float z,
-                             int r, int g, int bl, int a) {
-        b.vertex(m, x0, y0, z).color(r, g, bl, a);
-        b.vertex(m, x1, y0, z).color(r, g, bl, a);
-        b.vertex(m, x1, y1, z).color(r, g, bl, a);
-        b.vertex(m, x0, y1, z).color(r, g, bl, a);
+    /**
+     * One solid-coloured rectangle in the screen's plane, used for the backing
+     * plate, the bezel and the "browser still loading" placeholder.
+     *
+     * @param z    z offset inside the screen's plane
+     * @param grow how far to inflate the rectangle on every side; negative shrinks
+     */
+    private void drawSolid(LevelRenderContext ctx, PoseStack pose, Vec3 cam, PlacedScreen s,
+                           int r, int g, int b, int alpha, float z, float grow) {
+        drawSolid(ctx, pose, cam, s, r, g, b, alpha, z, grow, 0f);
+    }
+
+    /** As above, but also outlining a frame of thickness {@code thick}. */
+    private void drawSolid(LevelRenderContext ctx, PoseStack pose, Vec3 cam, PlacedScreen s,
+                           int r, int g, int b, int alpha, float z, float grow, float thick) {
+        float hw = s.width / 2.0f + grow;
+        float hh = s.height() / 2.0f + grow;
+
+        // TODO(port) RenderTypes.debugQuads is the vanilla render type for plain
+        // coloured quads and is the only public one that needs no texture. Its vertex
+        // format is built lazily so it cannot be confirmed with javap; if the frame
+        // comes out invisible or crashes the render thread, this is the line to
+        // change. Everything else here follows the spike's proven path.
+        RenderType type = RenderTypes.debugQuads();
+
+        pose.pushPose();
+        pose.translate((float) (s.pos.x - cam.x), (float) (s.pos.y - cam.y), (float) (s.pos.z - cam.z));
+        pose.rotateDegrees(Axis.YP, -s.yaw);
+
+        final float zf = z;
+        if (thick > 0f) {
+            // Four bars around the edge.
+            bar(ctx, pose, type, -hw - thick, hh, hw + thick, hh + thick, zf, r, g, b, alpha);
+            bar(ctx, pose, type, -hw - thick, -hh - thick, hw + thick, -hh, zf, r, g, b, alpha);
+            bar(ctx, pose, type, -hw - thick, -hh, -hw, hh, zf, r, g, b, alpha);
+            bar(ctx, pose, type, hw, -hh, hw + thick, hh, zf, r, g, b, alpha);
+        } else {
+            bar(ctx, pose, type, -hw, -hh, hw, hh, zf, r, g, b, alpha);
+        }
+
+        pose.popPose();
+    }
+
+    private void bar(LevelRenderContext ctx, PoseStack pose, RenderType type,
+                     float x0, float y0, float x1, float y1, float z,
+                     int r, int g, int b, int alpha) {
+        final int col = (alpha << 24) | (r << 16) | (g << 8) | b;
+        ctx.submitNodeCollector().submitCustomGeometry(pose, type, (p, buf) -> {
+            buf.addVertex(p, x0, y0, z).setColor(col);
+            buf.addVertex(p, x1, y0, z).setColor(col);
+            buf.addVertex(p, x1, y1, z).setColor(col);
+            buf.addVertex(p, x0, y1, z).setColor(col);
+        });
+    }
+
+    /** Moves to the screen's own frame: camera-relative, then yaw. */
+    private void pushAt(PoseStack pose, Vec3 cam, PlacedScreen s) {
+        pose.pushPose();
+        pose.translate(-cam.x, -cam.y, -cam.z);
+        pose.translate((float) (s.pos.x - cam.x), (float) (s.pos.y - cam.y), (float) (s.pos.z - cam.z));
+        pose.rotateDegrees(Axis.YP, -s.yaw);
+    }
+
+    /**
+     * Registers the browser's live texture under a stable id, once per stream.
+     * Re-registering every frame would churn the texture manager for nothing.
+     */
+    private Identifier textureIdFor(PlacedScreen s) {
+        return textureIds.computeIfAbsent(s.streamId, id -> {
+            // Stream ids come from the network, so sanitise before they become a path.
+            String safe = id.replaceAll("[^A-Za-z0-9_.-]", "_");
+            Identifier identifier =
+                    Identifier.fromNamespaceAndPath(ScreenMineClient.MOD_ID, "browser/" + safe);
+            Minecraft.getInstance().getTextureManager()
+                    .register(identifier, new BrowserTexture(s.browser));
+            return identifier;
+        });
     }
 }

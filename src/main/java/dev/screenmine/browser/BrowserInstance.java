@@ -44,6 +44,23 @@ public final class BrowserInstance {
             "var h=document.querySelector('h1.ytd-watch-metadata,h1.title');" +
             "if(h&&h.innerText)return h.innerText;return window.__smBase||'';}" +
             "window.__smBase=document.title;" +
+            // --- editing shim -------------------------------------------------
+            // JCEF's OSR path only ever delivers KEY_PRESSED as a RAWKEYDOWN, so
+            // Blink's default editing actions (Backspace, Delete, caret movement)
+            // never fire, even though keydown listeners in the page do see the
+            // event. Known upstream: DimasKama/mcef-modern#4, still open, and PR
+            // #5 explicitly does not fix it. Remove this once that is resolved.
+            "(function(){if(window.__smEdit)return;window.__smEdit=1;" +
+            "function ed(e){var t=e.target;return t&&(t.isContentEditable||t.tagName==='INPUT'||t.tagName==='TEXTAREA');}" +
+            "function set(e,a,b){var t=e.target;try{t.setSelectionRange(a,b);}catch(x){}}" +
+            "document.addEventListener('keydown',function(e){if(!ed(e))return;var t=e.target,s=t.selectionStart,n=t.selectionEnd,v=t.value;" +
+            "if(e.key==='Backspace'){if(s!==n){t.setRangeText('',s,n,'end');}else if(s>0){t.setRangeText('',s-1,s,'end');}e.preventDefault();}" +
+            "else if(e.key==='Delete'){if(s!==n){t.setRangeText('',s,n,'end');}else if(n<v.length){t.setRangeText('',n,n+1,'end');}e.preventDefault();}" +
+            "else if(e.key==='ArrowLeft'){if(s===n&&s>0)set(e,s-1,s-1);e.preventDefault();}" +
+            "else if(e.key==='ArrowRight'){if(s===n&&n<v.length)set(e,n+1,n+1);e.preventDefault();}" +
+            "else if(e.key==='Home'){set(e,0,0);e.preventDefault();}" +
+            "else if(e.key==='End'){set(e,v.length,v.length);e.preventDefault();}" +
+            "t.dispatchEvent(new Event('input',{bubbles:true}));},true);})();" +
             "setInterval(function(){try{" +
             "var all=document.querySelectorAll('video,audio');" +
             "for(var i=0;i<all.length;i++){var e=all[i];" +

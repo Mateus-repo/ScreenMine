@@ -133,7 +133,14 @@ public final class BrowserInstance {
         browser.resize(surfaceWidth, surfaceHeight);
         installHandlersOnce(browser.getCefBrowser().getClient());
         LIVE.put(browser.getCefBrowser().getIdentifier(), this);
-        if (!"about:blank".equals(currentUrl)) {
+        if (currentUrl.startsWith("data:")) {
+            // Chromium refuses a data: URL as a top-level navigation: onLoadEnd never
+            // fires and the page stays blank. Build it on about:blank instead.
+            String html = currentUrl.substring(currentUrl.indexOf((int) 44) + 1);
+            LOGGER.info("INJECT data-url into about:blank, {} chars", html.length());
+            injectJavaScript("document.open();document.write(decodeURIComponent(STRING))"
+                    .replace("STRING", "\"" + html + "\""));
+        } else if (!"about:blank".equals(currentUrl)) {
             LOGGER.info("NAVIGATE to {}", currentUrl);
             browser.getCefBrowser().loadURL(currentUrl);
         }
@@ -201,6 +208,14 @@ public final class BrowserInstance {
     /** The raw JCEF browser behind the MCEF Modern wrapper, or null. */
     private CefBrowser cef() {
         return browser == null ? null : browser.getCefBrowser();
+    }
+
+    /** Run JS in the page, ignoring failures. */
+    private void injectJavaScript(String code) {
+        CefBrowser cef = cef();
+        if (cef != null) {
+            cef.executeJavaScript(code, cef.getURL(), 0);
+        }
     }
 
     private void injectAgent() {

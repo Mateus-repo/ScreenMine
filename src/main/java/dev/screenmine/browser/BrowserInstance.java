@@ -76,7 +76,24 @@ public final class BrowserInstance {
             "var u=window.location.href.replace(/\\|/g,'');" +
             "var s='SM|'+t+'|'+p+'|'+ed+'|'+ad+'|'+u+'|'+pageTitle().replace(/\\|/g,' ').slice(0,120);" +
             "if(s!==last){last=s;document.title=s;}" +
-            "}catch(e){}},250);})();";
+            "}catch(e){}},250);" +
+            // One-shot self report. The volume bug turned out to be invisible from
+            // Java: applyGain looked like it worked and nothing happened in the
+            // page. These are the three numbers that tell them apart - what Java
+            // last pushed, how many media elements the querySelectorAll saw, and
+            // what the element's volume actually is.
+            "setTimeout(function(){try{" +
+            "var all=document.querySelectorAll('video,audio');" +
+            "var v=document.querySelector('video');" +
+            "var a=document.activeElement;" +
+            "console.log(\"" + CodecProbe.AGENT_PREFIX + "vol=\"+window.__smVol" +
+            "+\"|media=\"+all.length" +
+            "+\"|vvolume=\"+(v?v.volume.toFixed(2):'-')" +
+            "+\"|vpaused=\"+(v?(v.paused?'1':'0'):'-')" +
+            "+\"|editable=\"+(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.isContentEditable)?'1':'0')" +
+            "+\"|edit=\"+(window.__smEdit?'1':'0'));" +
+            "}catch(e){console.log(\"" + CodecProbe.AGENT_PREFIX + "error=\"+e);}},1500);" +
+            "})();";
 
     public final String streamId;
 
@@ -209,12 +226,7 @@ public final class BrowserInstance {
                 if (self == null || title == null) {
                     return;
                 }
-                if (title.startsWith(CodecProbe.PREFIX)) {
-                    // Diagnostic payload, not playback state. Report it and leave
-                    // the page title we had before untouched: the agent rewrites
-                    // the title every 250ms anyway.
-                    CodecProbe.report(title.substring(CodecProbe.PREFIX.length()));
-                } else if (title.startsWith(STATE_PREFIX)) {
+                if (title.startsWith(STATE_PREFIX)) {
                     self.parseState(title);
                 } else {
                     self.pageTitle = title;
@@ -232,6 +244,28 @@ public final class BrowserInstance {
                     // CEF thread — never touch mod state from here
                     self.pendingNavigate = url;
                 }
+            }
+
+            /**
+             * Diagnostics only.
+             *
+             * <p>Pages log plenty of their own, so only our prefixed lines are
+             * taken. This exists because {@code executeJavaScript} has no
+             * callback: the console is the one channel that pushes back to us
+             * reliably.
+             */
+            @Override
+            public boolean onConsoleMessage(CefBrowser b, org.cef.CefSettings.LogSeverity level,
+                    String message, String source, int line) {
+                if (message == null || !CodecProbe.enabled()) {
+                    return false;
+                }
+                if (message.startsWith(CodecProbe.PREFIX)) {
+                    CodecProbe.report(message.substring(CodecProbe.PREFIX.length()));
+                } else if (message.startsWith(CodecProbe.AGENT_PREFIX)) {
+                    CodecProbe.agentReport(message.substring(CodecProbe.AGENT_PREFIX.length()));
+                }
+                return false;   // let the other console listeners keep it
             }
         });
     }
@@ -287,6 +321,11 @@ public final class BrowserInstance {
             return;
         }
         appliedGain = g;
+        // Logged because "N does nothing" was impossible to reason about: from
+        // Java the handler looked correct and the chat message appeared, so the
+        // only question left was whether the value ever left the JVM.
+        LOGGER.info("GAIN {} -> __smVol={}", streamId,
+                String.format(java.util.Locale.ROOT, "%.3f", g));
         js("window.__smVol=" + String.format(java.util.Locale.ROOT, "%.3f", g) + ";");
     }
 

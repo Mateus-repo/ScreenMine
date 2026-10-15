@@ -20,18 +20,25 @@ import org.slf4j.LoggerFactory;
  * {@code config/screenmine.properties}, then load any page: the table lands in
  * {@code latest.log} under the {@code ScreenMine/codecs} logger.
  *
- * <p>The report comes back through {@code document.title} because
+ * <p>The report comes back through the browser console, which
+ * {@code CefDisplayHandler.onConsoleMessage} receives directly.
+ *
+ * <p>It was originally sent through {@code document.title}, because
  * {@code CefBrowser.executeJavaScript} has no callback overload (verified with
- * {@code javap}), so there is no way to get a return value out. The page agent
- * already owns that channel for playback state; this borrows it with a separate
- * {@value #PREFIX} marker.
+ * {@code javap}) and so there is no way to read a return value. That channel lost
+ * the race: the page agent rewrites the title every 250ms, and the 2026-10-15
+ * 12:47 run logged "codec probe ON" and then nothing at all. The console is a
+ * push channel and does not have to win a race.
  */
 public final class CodecProbe {
 
     private static final Logger LOG = LoggerFactory.getLogger("ScreenMine/codecs");
 
-    /** Marks a {@code document.title} payload that belongs to the probe. */
+    /** Marks a console message that belongs to a diagnostic. */
     public static final String PREFIX = "SMX|";
+
+    /** Marks the page agent's one-shot self report. */
+    public static final String AGENT_PREFIX = "SMA|";
 
     /** Field separator inside the payload; not valid in any value we send. */
     private static final char FIELD = '~';
@@ -87,24 +94,37 @@ public final class CodecProbe {
                 + "out.push('MediaSource='+(window.MediaSource?'yes':'MISSING'));"
                 + "out.push('ua='+navigator.userAgent);"
                 + "out.push('secureContext='+(window.isSecureContext?'yes':'no'));"
-                + "document.title=\"" + PREFIX + "\"+out.join(\"~\");"
-                + "}catch(e){}})();";
+                + "console.log(\"" + PREFIX + "\"+out.join(\"~\"));"
+                + "}catch(e){console.log(\"" + PREFIX + "error=\"+e);}})();";
     }
 
     /**
-     * Logs a payload that arrived through the title channel.
+     * Logs a payload that arrived through the console.
      *
-     * <p>The table is printed one codec per line because a single {@code INFO}
+     * <p>The table is printed one field per line because a single {@code INFO}
      * line that has to be read sideways past a log prefix is much worse to work
      * with than a block.
      */
     public static void report(String payload) {
-        LOG.info("---- codec probe: {} ----", payload.replace(FIELD, ' '));
+        LOG.info("---- codec probe ----");
         for (String field : payload.split(String.valueOf(FIELD))) {
             if (!field.isBlank()) {
                 LOG.info("  {}", field);
             }
         }
         LOG.info("---- end codec probe ----");
+    }
+
+    /**
+     * Logs the page agent's self report.
+     *
+     * <p>This is the one that answers "is the mod's volume reaching the page?".
+     * {@code vol} is what Java last pushed, {@code media} is how many
+     * {@code <video>}/{@code <audio>} elements the agent can see, and
+     * {@code vvolume} is what the element's volume actually is. If those three
+     * disagree, the agent is not applying anything.
+     */
+    public static void agentReport(String payload) {
+        LOG.info("agent report: {}", payload.replace(FIELD, ' '));
     }
 }

@@ -89,8 +89,12 @@ public final class BrowserFullScreen extends Screen {
         super.extractRenderState(gfx, mouseX, mouseY, delta);
 
         if (!screen.browser.ensureCreated() || !screen.browser.ready()) {
+            // Say what is actually happening instead of showing an empty page.
+            String msg = dev.screenmine.spike.SpikeBrowserClient.browserReady()
+                    ? Lang.t("browser.starting")
+                    : "Chromium still starting — this takes a minute the first time";
             gfx.centeredText(font,
-                    Component.literal(Lang.t("browser.starting")).withStyle(ChatFormatting.GRAY),
+                    Component.literal(msg).withStyle(ChatFormatting.GRAY),
                     width / 2, height / 2, 0xFFFFFF);
             return;
         }

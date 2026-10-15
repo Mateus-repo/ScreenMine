@@ -273,6 +273,11 @@ public final class BrowserInstance {
             LOGGER.warn("REFUSING zero-size resize {}x{} - a browser with no size never paints", width, height);
             return;
         }
+        if (width == surfaceWidth && height == surfaceHeight) {
+            // Same size: calling browser.resize anyway makes CEF reload the page,
+            // which threw away the page position every time the overlay closed.
+            return;
+        }
         surfaceWidth = width;
         surfaceHeight = height;
         if (browser != null) {

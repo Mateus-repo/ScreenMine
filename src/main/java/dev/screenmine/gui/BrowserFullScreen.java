@@ -52,6 +52,10 @@ public final class BrowserFullScreen extends Screen {
     @Override
     protected void init() {
         super.init();
+        // The SDL backend only emits character events while something holds text
+        // input focus. Without this, key events arrive but charTyped never does,
+        // so typing does nothing at all.
+        minecraft.onTextInputFocusChange(this, true);
         screen.browser.ensureCreated();
         fitToWindow();
         MCEFBrowser b = browser();
@@ -248,6 +252,7 @@ public final class BrowserFullScreen extends Screen {
 
     @Override
     public void onClose() {
+        minecraft.onTextInputFocusChange(this, false);
         MCEFBrowser b = browser();
         if (b != null) {
             b.setFocus(false);

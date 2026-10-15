@@ -35,8 +35,26 @@ public final class WorldScreenRenderer {
      */
     private static final int FULL_BRIGHT = 0xF000F0;
 
-    /** Stream id to the texture id its browser is registered under. */
-    private final Map<String, Identifier> textureIds = new HashMap<>();
+    /**
+     * A live texture registration: which id, and which browser instance it
+     * points at.
+     *
+     * <p>The instance is part of the key on purpose. The map used to be keyed by
+     * stream id alone, and releaseDetached only dropped an entry when the stream
+ * was absent at the moment a frame rendered. Detach and re-attach of the same
+ * id inside one tick - which onSession does - means it is never absent, the
+ * stale entry survives, and it keeps pointing at a closed
+ * {@link BrowserInstance}. The screen then renders black and never recovers
+ * without a restart.
+     */
+    private record Registration(Identifier id, BrowserInstance browser) {
+    }
+
+    /** Stream id to the texture registration its browser is using. */
+    private final Map<String, Registration> textureIds = new HashMap<>();
+
+    /** Stream ids come from the network; cap them before they become a path. */
+    private static final int MAX_ID_CHARS = 64;
 
     private final ScreenWorld world;
 
@@ -82,11 +100,12 @@ public final class WorldScreenRenderer {
         if (textureIds.isEmpty()) {
             return;
         }
+        Minecraft mc = Minecraft.getInstance();
         textureIds.entrySet().removeIf(e -> {
             if (world.get(e.getKey()) != null) {
                 return false;
             }
-            Minecraft.getInstance().getTextureManager().release(e.getValue());
+            mc.getTextureManager().release(e.getValue().id());
             return true;
         });
     }
@@ -218,14 +237,27 @@ public final class WorldScreenRenderer {
      * Re-registering every frame would churn the texture manager for nothing.
      */
     private Identifier textureIdFor(PlacedScreen s) {
-        return textureIds.computeIfAbsent(s.streamId, id -> {
-            // Stream ids come from the network, so sanitise before they become a path.
-            String safe = id.replaceAll("[^A-Za-z0-9_.-]", "_");
-            Identifier identifier =
-                    Identifier.fromNamespaceAndPath(ScreenMineClient.MOD_ID, "browser/" + safe);
-            Minecraft.getInstance().getTextureManager()
-                    .register(identifier, new BrowserTexture(s.browser));
-            return identifier;
-        });
+        Registration existing = textureIds.get(s.streamId);
+        if (existing != null) {
+            if (existing.browser() == s.browser) {
+                return existing.id();
+            }
+            // Same stream id, different browser: the previous placement was
+            // detached and re-attached without a frame in between. The old
+            // registration points at a closed browser, so drop it now rather
+            // than waiting for releaseDetached, which will never see it absent.
+            Minecraft.getInstance().getTextureManager().release(existing.id());
+        }
+        // Stream ids come from the network, so sanitise before they become a path.
+        String safe = s.streamId.replaceAll("[^A-Za-z0-9_.-]", "_");
+        if (safe.length() > MAX_ID_CHARS) {
+            safe = safe.substring(0, MAX_ID_CHARS);
+        }
+        Identifier identifier =
+                Identifier.fromNamespaceAndPath(ScreenMineClient.MOD_ID, "browser/" + safe);
+        Minecraft.getInstance().getTextureManager()
+                .register(identifier, new BrowserTexture(s.browser));
+        textureIds.put(s.streamId, new Registration(identifier, s.browser));
+        return identifier;
     }
 }

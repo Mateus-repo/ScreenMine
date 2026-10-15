@@ -76,9 +76,6 @@ public final class ScreenMineClient implements ClientModInitializer {
     private String pendingServerId = "";
     private boolean loggedIn;
 
-    /** Whether the world input hooks are in place; see TODO(port) in installInputHooks. */
-    private boolean inputHooksInstalled;
-
     /** Last modifier mask the key handler saw, forwarded to CEF's mouse events. */
     private int lastModifiers;
 
@@ -244,7 +241,6 @@ public final class ScreenMineClient implements ClientModInitializer {
             net.start(mc.getUser().getName());
         }
 
-        installInputHooks(mc);
         drainPackets(mc);
         reportServer(mc);
         drainBrowserNavigations();
@@ -285,8 +281,9 @@ public final class ScreenMineClient implements ClientModInitializer {
             releaseBrowserFocus();
             mc.gui.setScreen(new MenuMain());
         }
-        // Normally consumed by the input hook in onKey; this is the fallback for when the
-        // key is unbound there, or before that hook exists (see TODO(port)).
+        // Normally consumed by the input hook, which always fires even when
+        // another mod claims the key first; this is the fallback for when the
+        // binding is not on a key at all.
         while (keyControl.consumeClick()) {
             toggleControlMode();
         }
@@ -384,44 +381,43 @@ public final class ScreenMineClient implements ClientModInitializer {
     // ------------------------------------------------------- world input //
 
     /**
-     * Intercepts the wheel and keyboard so the screen can be driven from inside the
-     * world, without opening any GUI.
+     * Intercepts the wheel and keyboard so the screen can be driven from inside
+     * the world, without opening any GUI.
+ *
+ * <p>Called from the mixins in {@code dev.screenmine.mixin}, which is where SDL
+ * delivers the events now. 1.21.4 chained GLFW's window callbacks to steal them;
+ * 26.3 replaced GLFW with SDL3, so {@code org.lwjgl.glfw} is gone and there is
+ * no public hook. The 26.3 equivalents are {@code KeyboardHandler.keyPress} and
+ * {@code charTyped} and {@code MouseHandler.onScroll}, and their signatures
+ * were verified with javap before being written down.
+ *
+     * <p>Each handler decides whether the event belongs to the browser; if not it
+ * returns false and the mixin lets it through to the game. The wheel only goes
+ * to the browser while control mode is on. The keyboard only does when the page
+ * actually has a text field focused — which is what keeps WASD walking the
+     * player around while they watch.
      *
-     * <p>Each hook decides whether the event belongs to the browser; if not it
-     * hands it to the game. The wheel always goes to the browser while control mode
-     * is on. The keyboard only does when the page actually has a text field focused
-     * — so WASD keeps walking you around while you watch.
+     * @return true when the event was consumed by a browser
      */
-    private void installInputHooks(Minecraft mc) {
-        if (inputHooksInstalled) {
-            return;
-        }
-        // TODO(port) 1.21.4 chained GLFW's window callbacks to steal wheel and keyboard.
-        // 26.3 replaced GLFW with SDL3, so org.lwjgl.glfw is gone and there is no
-        // public API to intercept input before Minecraft sees it. This needs mixins on
-        // KeyboardHandler.keyPress/charTyped and MouseHandler.onScroll, which are the
-        // 26.3 equivalents. The handlers below are already written against the
-        // MCEFBrowser API the overlay uses, so the mixins only have to forward
-        // (window, dx, dy) to onScroll and (window, key, KeyEvent) to onKey.
-        //
-        // Until then control mode drives the browser from tickControlMode only, so the
-        // mouse works and the wheel/keys do not. Nothing else is affected.
-        inputHooksInstalled = true;
-        LOG.info("ScreenMine: world input hooks pending port (see TODO(port))");
-    }
-
-    /** @return true when the event was consumed by a browser */
-    private boolean onScroll(double dy) {
+    public boolean onWorldScroll(double horizontal, double vertical) {
         BrowserInstance b = controlledBrowser();
         if (b == null || b.raw() == null) {
             return false;
         }
-        b.raw().onMouseScrolled(currentHit.pixelX(), currentHit.pixelY(),
-                dy * Cfg.SCROLL_SPEED);
-        return true;
+        if (horizontal != 0.0) {
+            b.raw().onMouseScrolled(currentHit.pixelX(), currentHit.pixelY(),
+                    horizontal * Cfg.SCROLL_SPEED);
+            return true;
+        }
+        if (vertical != 0.0) {
+            b.raw().onMouseScrolled(currentHit.pixelX(), currentHit.pixelY(),
+                    vertical * Cfg.SCROLL_SPEED);
+            return true;
+        }
+        return false;
     }
 
-    private boolean onKey(int key, int scancode, int action, int mods) {
+    public boolean onWorldKey(int action, KeyEvent event) {
         BrowserInstance b = controlledBrowser();
         boolean typing = b != null && b.raw() != null && b.isEditing();
 
@@ -431,9 +427,9 @@ public final class ScreenMineClient implements ClientModInitializer {
         // fires. Consuming the event keeps the KeyMapping from seeing it too,
         // so the mode cannot toggle twice on one press. While a text field on
         // the page has focus the key is left alone, so it can be typed.
-        if (!typing && action == InputConstants.PRESS && key != UNKNOWN_KEY
+        if (!typing && action == InputConstants.PRESS && event.key() != UNKNOWN_KEY
                 && Minecraft.getInstance().gui.screen() == null
-                && key == boundKeyCode(keyControl)) {
+                && event.key() == boundKeyCode(keyControl)) {
             toggleControlMode();
             return true;
         }
@@ -441,7 +437,7 @@ public final class ScreenMineClient implements ClientModInitializer {
         if (b == null || b.raw() == null) {
             return false;
         }
-        if (key == InputConstants.KEY_ESCAPE) {
+        if (event.key() == InputConstants.KEY_ESCAPE) {
             if (action == InputConstants.PRESS) {
                 controlMode = false;
                 releaseBrowserFocus();
@@ -451,16 +447,20 @@ public final class ScreenMineClient implements ClientModInitializer {
         if (!b.isEditing()) {
             return false;  // nothing focused on the page — let the game have the key
         }
-        lastModifiers = mods;
+        lastModifiers = event.modifiers();
+        // Alt+arrow is browser history, which no page script can do.
+        if (b.handleShortcut(event)) {
+            return true;
+        }
         if (action == InputConstants.RELEASE) {
-            b.raw().onKeyReleased(new KeyEvent(key, scancode, mods));
+            b.raw().onKeyReleased(event);
         } else {
-            b.raw().onKeyPressed(new KeyEvent(key, scancode, mods));
+            b.raw().onKeyPressed(event);
         }
         return true;
     }
 
-    private boolean onChar(int codepoint) {
+    public boolean onWorldChar(int codepoint) {
         BrowserInstance b = controlledBrowser();
         if (b == null || b.raw() == null || !b.isEditing()) {
             return false;

@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "minVersion": "0.8.7",
+  "package": "dev.screenmine.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "KeyboardHandlerMixin",
+    "MouseHandlerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

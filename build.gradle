@@ -24,6 +24,15 @@ dependencies {
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
+    // No mixin annotation processor here, deliberately. The mixins name their
+    // targets directly because this project's runtime is Mojang-named, not
+    // intermediary: the shipped jar contains zero net/minecraft/class_NNNN
+    // references and the game runs the named members as written. Adding the AP
+    // makes it demand an obfuscation mapping that does not exist and it fails
+    // the build with "Unable to locate obfuscation mapping". Verified against
+    // the jar, not assumed - if this ever moves to intermediary, the AP and a
+    // refmap come back with it.
+
     // Compile-only: the player installs mcef-modern separately. It already
     // nests jcef-api + the JCEF native launcher, so neither is shipped here.
     compileOnly "net.dimaskama:mcef-modern:${project.mcef_modern_version}"

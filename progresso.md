@@ -20,7 +20,7 @@ _Atualiza no fim de cada passo. Mantém curto e factual._
 - [x] 0. Reconhecimento
 - [x] 1. Build a compilar contra MC 26.3 real
 - [x] 2. Dependências confirmadas (mcef-modern substitui MCEF)
-- [x] 3. Spike de render world-space (resolvido e provado em jogo)
+- [x] 3. Spike de render world-space - **A API compilava, mas nunca renderizou.** Ver "Render no mundo"
 - [x] 4. Migracao GUI (7 dos 8 ecrans; o 8.o e o overlay do browser)
 - [~] 5. Input - overlay validado; falta o roubo no mundo (mixins)
 - [x] 6. Render completo (submit-node collector + BrowserTexture)
@@ -370,7 +370,7 @@ A via que funciona, toda ela API publica, sem mixins nem access widener:
 3. `close()` do `BrowserTexture` fica vazio de proposito: o default fecharia um
    `GpuTexture` que pertence ao browser.
 
-Isto veio do spike de render, onde foi provado em jogo.
+Isto veio do spike de render. **CORRIGIDO 2026-10-15:** o spike nao renderizou nunca. Usava a mesma chamada parcial de vertice que crashou no primeiro teste do port, por isso so estava provado que compilava, nao que desenhasse. O caminho da API public era o certo; a chamada dos vertices nao.
 
 ## Funcionalidade pendente (TODOs no codigo)
 
@@ -440,6 +440,21 @@ Checklist completa em baixo.
   so com API publica. **Correcao de uma decisao anterior:** os `lang` precisavam mesmo da
   chave `key.category.screenmine.main`, porque 26.3 removeu o construtor de `KeyMapping`
   com `String` - sem isso a aba dos keybinds ficava sem rotulo.
-  **Falta uma funcionalidade:** o roubo de input no mundo (roda/teclas em control mode)
-  precisa de mixins em `KeyboardHandler`/`MouseHandler`, porque nao ha GLFW em 26.3.
-  Tudo o resto esta implementado.
+- **2026-10-15 (noite)** - **Primeiro teste do port completo: crashou.** E a primeira
+  vez que o port correu, e imediatamente provou que "build verde" nao era "funciona".
+  - Confirmado em jogo: a aba de teclas mostra **"ScreenMine"** (a correcao dos `lang`
+    funcionou) e o browser arranca (`CREATE url=https://www.youtube.com surface=1920x1080`).
+  - Crash: `IllegalStateException: Missing elements in vertex` em
+    `WorldScreenRenderer.lambda$drawScreen$0`. Causa: so passava posicao/UV/cor ao
+    vertice; o formato do `RenderTypes.text` pede mais elementos.
+  - **O spike tinha o mesmo bug.** Portanto nunca renderizou - so compilava. A
+    afirmacao de que estava "provado em jogo" estava errada e foi corrigida acima.
+    Licao: um spike verde nao prova que desenha nada.
+  - Correcao sem adivinhar o formato (e lazy, o `javap` nao o diz): no bytecode,
+    `BufferBuilder.setX` chama `beginElement`, que devolve `-1L` para um elemento
+    fora do formato, e o setter salta a escrita. Logo pode-se preencher sempre todos
+    os atributos. `vertex()` faz cor + UV + overlay + light + normal.
+  - Isso fechou os dois `TODO(port)` do `WorldScreenRenderer`: o formato do
+    `debugQuads` deixou de ser uma aposta, e o lightmap full-bright deixa de
+    escurecer a imagem a noite. `TODO(port)` no ficheiro: 2 -> 0.
+  - **Resta um `TODO(port)` em todo o mod:** o roubo de input no mundo.

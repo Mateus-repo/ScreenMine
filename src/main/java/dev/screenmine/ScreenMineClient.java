@@ -16,20 +16,21 @@ import dev.screenmine.world.ScreenWorld;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.KeyMapping;
-import net.minecraft.server.ServerInfo;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.input.MouseButtonInfo;
+import net.minecraft.client.multiplayer.ServerData;
 import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.resources.Identifier;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.ChatFormatting;
-import org.lwjgl.glfw.GLFW;
-import org.lwjgl.glfw.GLFWCharCallback;
-import org.lwjgl.glfw.GLFWKeyCallback;
-import org.lwjgl.glfw.GLFWScrollCallback;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,11 +73,11 @@ public final class ScreenMineClient implements ClientModInitializer {
     private String lastReportedServer = "";
     private boolean loggedIn;
 
-    /** Chained GLFW callbacks, so control mode can steal wheel and keyboard. */
+    /** Whether the world input hooks are in place; see TODO(port) in installInputHooks. */
     private boolean inputHooksInstalled;
-    private GLFWScrollCallback prevScroll;
-    private GLFWKeyCallback prevKey;
-    private GLFWCharCallback prevChar;
+
+    /** Last modifier mask the key handler saw, forwarded to CEF's mouse events. */
+    private int lastModifiers;
 
     /** Triple-click-then-grab gesture state. */
     private boolean lastWorldLeftDown;
@@ -91,31 +92,48 @@ public final class ScreenMineClient implements ClientModInitializer {
     public void onInitializeClient() {
         instance = this;
 
-        keyMenu = bind("menu", GLFW.GLFW_KEY_M);
-        keyControl = bind("control", GLFW.GLFW_KEY_C);
-        keyBrowser = bind("browser", GLFW.GLFW_KEY_B);
-        keyMove = bind("move", GLFW.GLFW_KEY_G);
-        keyBigger = bind("bigger", GLFW.GLFW_KEY_EQUAL);
-        keySmaller = bind("smaller", GLFW.GLFW_KEY_MINUS);
-        keyPlayPause = bind("playpause", GLFW.GLFW_KEY_K);
-        keyRemove = bind("remove", GLFW.GLFW_KEY_DELETE);
-        keyVolUp = bind("volup", GLFW.GLFW_KEY_RIGHT_BRACKET);
-        keyVolDown = bind("voldown", GLFW.GLFW_KEY_LEFT_BRACKET);
-        keyMute = bind("mute", GLFW.GLFW_KEY_N);
+        keyMenu = bind("menu", InputConstants.KEY_M);
+        keyControl = bind("control", InputConstants.KEY_C);
+        keyBrowser = bind("browser", InputConstants.KEY_B);
+        keyMove = bind("move", InputConstants.KEY_G);
+        keyBigger = bind("bigger", InputConstants.KEY_EQUALS);
+        keySmaller = bind("smaller", InputConstants.KEY_MINUS);
+        keyPlayPause = bind("playpause", InputConstants.KEY_K);
+        keyRemove = bind("remove", InputConstants.KEY_DELETE);
+        keyVolUp = bind("volup", InputConstants.KEY_RBRACKET);
+        keyVolDown = bind("voldown", InputConstants.KEY_LBRACKET);
+        keyMute = bind("mute", InputConstants.KEY_N);
 
         ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
-        // LAST runs after clouds and weather, so nothing paints over the picture
-        WorldRenderEvents.LAST.register(worldRenderer::render);
-        HudRenderCallback.EVENT.register((ctx, counter) -> hud.render(ctx));
+        // TODO(port) 26.3 has no equivalent of 1.21.4's WorldRenderEvents.LAST. END_MAIN is
+        // the closest and draws before clouds and weather, so weather can paint over the
+        // screen. Accepted regression, verified against the 26.3 event list, not a missing
+        // feature. Consequence: on a snowy screen the picture is briefly veiled.
+        LevelRenderEvents.END_MAIN.register(worldRenderer::render);
+        // 26.3 replaced HudRenderCallback with a HUD element registry. addLast puts us
+        // after the vanilla overlays so nothing covers our text.
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(MOD_ID, "hud"),
+                (gfx, delta) -> hud.render(gfx));
 
         LOG.info("ScreenMine ready — {}", Cfg.serverConfigured()
                 ? "companion server " + Cfg.SERVER_HOST + ":" + Cfg.SERVER_PORT
                 : "no companion server configured, running standalone");
     }
 
+    /**
+     * 26.3 attaches a binding to a {@link KeyMapping.Category} object instead of a
+     * translation key, and there is no String-taking constructor left. The label is
+     * derived from the category id as {@code key.category.<namespace>.<path>}, which
+     * for {@code screenmine:main} is {@code key.category.screenmine.main} - so the
+     * lang files must carry that key and not the old
+     * {@code key.categories.screenmine}.
+     */
+    private static final KeyMapping.Category CATEGORY =
+            KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MOD_ID, "main"));
+
     private static KeyMapping bind(String name, int key) {
-        return KeyMappingHelper.registerKeyBinding(new KeyMapping(
-                "key." + MOD_ID + "." + name, InputConstants.Type.KEYBOARD, key, "key.categories." + MOD_ID));
+        return KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key." + MOD_ID + "." + name, InputConstants.Type.KEYBOARD, key, CATEGORY));
     }
 
     // ------------------------------------------------------------- accessors //
@@ -161,7 +179,7 @@ public final class ScreenMineClient implements ClientModInitializer {
             return;
         }
         if (currentHit == null) {
-            chat(Component.literal(Lang.t("chat.aim")).formatted(ChatFormatting.GRAY));
+            chat(Component.literal(Lang.t("chat.aim")).withStyle(ChatFormatting.GRAY));
             return;
         }
         enterControlMode();
@@ -218,7 +236,7 @@ public final class ScreenMineClient implements ClientModInitializer {
 
         if (!loggedIn) {
             loggedIn = true;
-            net.start(mc.getSession().getUsername());
+            net.start(mc.getUser().getName());
         }
 
         installInputHooks(mc);
@@ -228,7 +246,7 @@ public final class ScreenMineClient implements ClientModInitializer {
         followServerClock();
         world.tickMoving(mc);
         // keep the last aimed-at screen while a GUI is open, so menus can act on it
-        if (controlMode || mc.currentScreen == null) {
+        if (controlMode || mc.gui.screen() == null) {
             currentHit = world.pick(mc);
         }
 
@@ -255,17 +273,17 @@ public final class ScreenMineClient implements ClientModInitializer {
     private void handleKeys(Minecraft mc) {
         while (keyMenu.consumeClick()) {
             controlMode = false;
-            mc.setScreen(new MenuMain());
+            mc.gui.setScreen(new MenuMain());
         }
-        // Normally consumed by the GLFW hook below; this is the fallback for
-        // when the key is unbound there (see onKey).
+        // Normally consumed by the input hook in onKey; this is the fallback for when the
+        // key is unbound there, or before that hook exists (see TODO(port)).
         while (keyControl.consumeClick()) {
             toggleControlMode();
         }
         while (keyBrowser.consumeClick()) {
             if (currentHit != null) {
                 controlMode = false;
-                mc.setScreen(new dev.screenmine.gui.BrowserFullScreen(currentHit.screen()));
+                mc.gui.setScreen(new dev.screenmine.gui.BrowserFullScreen(currentHit.screen()));
             }
         }
         while (keyMove.consumeClick()) {
@@ -327,7 +345,7 @@ public final class ScreenMineClient implements ClientModInitializer {
     private void announceVolume(PlacedScreen screen) {
         chat(Component.literal(screen.muted
                 ? Lang.t("chat.muted")
-                : Lang.t("chat.volume", screen.volume)).formatted(ChatFormatting.GRAY));
+                : Lang.t("chat.volume", screen.volume)).withStyle(ChatFormatting.GRAY));
     }
 
     private PlacedScreen movingScreen() {
@@ -351,47 +369,30 @@ public final class ScreenMineClient implements ClientModInitializer {
     // ------------------------------------------------------- world input //
 
     /**
-     * Chains onto GLFW's wheel and keyboard callbacks so the screen can be driven
-     * from inside the world, without opening any GUI.
+     * Intercepts the wheel and keyboard so the screen can be driven from inside the
+     * world, without opening any GUI.
      *
      * <p>Each hook decides whether the event belongs to the browser; if not it
-     * hands it to whatever callback Minecraft installed. The wheel always goes to
-     * the browser while control mode is on. The keyboard only does when the page
-     * actually has a text field focused — so WASD keeps walking you around while
-     * you watch.
+     * hands it to the game. The wheel always goes to the browser while control mode
+     * is on. The keyboard only does when the page actually has a text field focused
+     * — so WASD keeps walking you around while you watch.
      */
     private void installInputHooks(Minecraft mc) {
         if (inputHooksInstalled) {
             return;
         }
-        long window = mc.getWindow().getHandle();
-        if (window == 0L) {
-            return;
-        }
+        // TODO(port) 1.21.4 chained GLFW's window callbacks to steal wheel and keyboard.
+        // 26.3 replaced GLFW with SDL3, so org.lwjgl.glfw is gone and there is no
+        // public API to intercept input before Minecraft sees it. This needs mixins on
+        // KeyboardHandler.keyPress/charTyped and MouseHandler.onScroll, which are the
+        // 26.3 equivalents. The handlers below are already written against the
+        // MCEFBrowser API the overlay uses, so the mixins only have to forward
+        // (window, dx, dy) to onScroll and (window, key, KeyEvent) to onKey.
+        //
+        // Until then control mode drives the browser from tickControlMode only, so the
+        // mouse works and the wheel/keys do not. Nothing else is affected.
         inputHooksInstalled = true;
-
-        prevScroll = GLFW.glfwSetScrollCallback(window, (win, dx, dy) -> {
-            if (!onScroll(dy)) {
-                if (prevScroll != null) {
-                    prevScroll.invoke(win, dx, dy);
-                }
-            }
-        });
-        prevKey = GLFW.glfwSetKeyCallback(window, (win, key, scancode, action, mods) -> {
-            if (!onKey(key, scancode, action, mods)) {
-                if (prevKey != null) {
-                    prevKey.invoke(win, key, scancode, action, mods);
-                }
-            }
-        });
-        prevChar = GLFW.glfwSetCharCallback(window, (win, codepoint) -> {
-            if (!onChar(codepoint)) {
-                if (prevChar != null) {
-                    prevChar.invoke(win, codepoint);
-                }
-            }
-        });
-        LOG.info("ScreenMine: world input hooks installed");
+        LOG.info("ScreenMine: world input hooks pending port (see TODO(port))");
     }
 
     /** @return true when the event was consumed by a browser */
@@ -400,8 +401,8 @@ public final class ScreenMineClient implements ClientModInitializer {
         if (b == null || b.raw() == null) {
             return false;
         }
-        b.raw().sendMouseWheel(currentHit.pixelX(), currentHit.pixelY(),
-                dy * Cfg.SCROLL_SPEED, 0);
+        b.raw().onMouseScrolled(currentHit.pixelX(), currentHit.pixelY(),
+                dy * Cfg.SCROLL_SPEED);
         return true;
     }
 
@@ -415,8 +416,8 @@ public final class ScreenMineClient implements ClientModInitializer {
         // fires. Consuming the event keeps the KeyMapping from seeing it too,
         // so the mode cannot toggle twice on one press. While a text field on
         // the page has focus the key is left alone, so it can be typed.
-        if (!typing && action == GLFW.GLFW_PRESS && key != GLFW.GLFW_KEY_UNKNOWN
-                && Minecraft.getInstance().currentScreen == null
+        if (!typing && action == InputConstants.PRESS && key != UNKNOWN_KEY
+                && Minecraft.getInstance().gui.screen() == null
                 && key == boundKeyCode(keyControl)) {
             toggleControlMode();
             return true;
@@ -425,8 +426,8 @@ public final class ScreenMineClient implements ClientModInitializer {
         if (b == null || b.raw() == null) {
             return false;
         }
-        if (key == GLFW.GLFW_KEY_ESCAPE) {
-            if (action == GLFW.GLFW_PRESS) {
+        if (key == InputConstants.KEY_ESCAPE) {
+            if (action == InputConstants.PRESS) {
                 controlMode = false;
                 releaseBrowserFocus();
             }
@@ -435,10 +436,11 @@ public final class ScreenMineClient implements ClientModInitializer {
         if (!b.isEditing()) {
             return false;  // nothing focused on the page — let the game have the key
         }
-        if (action == GLFW.GLFW_RELEASE) {
-            b.raw().sendKeyRelease(key, scancode, mods);
+        lastModifiers = mods;
+        if (action == InputConstants.RELEASE) {
+            b.raw().onKeyReleased(new KeyEvent(key, scancode, mods));
         } else {
-            b.raw().sendKeyPress(key, scancode, mods);
+            b.raw().onKeyPressed(new KeyEvent(key, scancode, mods));
         }
         return true;
     }
@@ -448,16 +450,19 @@ public final class ScreenMineClient implements ClientModInitializer {
         if (b == null || b.raw() == null || !b.isEditing()) {
             return false;
         }
-        b.raw().sendKeyTyped((char) codepoint, 0);
+        b.raw().onCharTyped(new CharacterEvent(codepoint));
         return true;
     }
 
-    /** The physical key a binding currently sits on, or GLFW_KEY_UNKNOWN. */
+    /** Stands for "this binding sits on nothing", which never equals a real key code. */
+    private static final int UNKNOWN_KEY = -1;
+
+    /** The physical key a binding currently sits on, or {@link #UNKNOWN_KEY}. */
     private static int boundKeyCode(KeyMapping binding) {
         InputConstants.Key bound = KeyMappingHelper.getBoundKeyOf(binding);
-        // Mouse buttons report 0..2, which are not valid GLFW key codes, so a
-        // plain code comparison is enough here.
-        return bound == null ? GLFW.GLFW_KEY_UNKNOWN : bound.getCode();
+        // Mouse buttons report 0..2, which are not valid keyboard codes, so a plain
+        // value comparison is enough here.
+        return bound == null ? UNKNOWN_KEY : bound.getValue();
     }
 
     /** The browser that should receive raw input right now, or null. */
@@ -466,7 +471,7 @@ public final class ScreenMineClient implements ClientModInitializer {
             return null;
         }
         Minecraft mc = Minecraft.getInstance();
-        if (mc.currentScreen != null) {
+        if (mc.gui.screen() != null) {
             return null;
         }
         return currentHit.screen().browser;
@@ -480,19 +485,20 @@ public final class ScreenMineClient implements ClientModInitializer {
      * the next click drops it.
      */
     private void tickGrabGesture(Minecraft mc) {
-        if (mc.currentScreen != null) {
+        if (mc.gui.screen() != null) {
             lastWorldLeftDown = false;
             return;
         }
-        long handle = mc.getWindow().getHandle();
-        boolean down = GLFW.glfwGetMouseButton(handle, GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
+        // 26.3 dropped GLFW, so the window handle is gone. MouseHandler already tracks the
+        // button state for us, which is a cleaner source than polling the platform.
+        boolean down = mc.mouseHandler.isLeftPressed();
         boolean rising = down && !lastWorldLeftDown;
         lastWorldLeftDown = down;
 
         PlacedScreen dragging = movingScreen();
         if (dragging != null) {
             // while carrying a screen the mouse belongs to us, not to mining
-            mc.options.attackKey.setPressed(false);
+            mc.options.keyAttack.setDown(false);
             if (rising) {
                 dragging.moving = false;
                 clickStreak = 0;
@@ -507,7 +513,7 @@ public final class ScreenMineClient implements ClientModInitializer {
             return;
         }
         // aiming at a screen: swallow the swing so clicking it does not punch
-        mc.options.attackKey.setPressed(false);
+        mc.options.keyAttack.setDown(false);
         if (!rising) {
             return;
         }
@@ -564,12 +570,12 @@ public final class ScreenMineClient implements ClientModInitializer {
     // ---------------------------------------------------------- control mode //
 
     private void tickControlMode(Minecraft mc) {
-        if (currentHit == null || mc.currentScreen != null) {
+        if (currentHit == null || mc.gui.screen() != null) {
             return;
         }
         // best effort: keep vanilla from mining/placing while we drive the browser
-        mc.options.attackKey.setPressed(false);
-        mc.options.useKey.setPressed(false);
+        mc.options.keyAttack.setDown(false);
+        mc.options.keyUse.setDown(false);
 
         BrowserInstance browser = currentHit.screen().browser;
         if (browser.raw() == null) {
@@ -577,29 +583,40 @@ public final class ScreenMineClient implements ClientModInitializer {
         }
         int px = currentHit.pixelX();
         int py = currentHit.pixelY();
-        browser.raw().sendMouseMove(px, py);
+        browser.raw().onMouseMoved(px, py);
 
-        long handle = mc.getWindow().getHandle();
-        boolean left = GLFW.glfwGetMouseButton(handle, GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
-        boolean right = GLFW.glfwGetMouseButton(handle, GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS;
+        boolean left = mc.mouseHandler.isLeftPressed();
+        boolean right = mc.mouseHandler.isRightPressed();
 
+        // mcef-modern takes vanilla input records, exactly like the overlay does, so
+        // the same events reach CEF without the old raw sendMouse* API.
         if (left != lastLeftDown) {
             if (left) {
-                browser.raw().sendMousePress(px, py, 0);
+                browser.raw().onMouseClicked(leftClick(px, py), true);
                 browser.raw().setFocus(true);
             } else {
-                browser.raw().sendMouseRelease(px, py, 0);
+                browser.raw().onMouseReleased(leftClick(px, py));
             }
             lastLeftDown = left;
         }
         if (right != lastRightDown) {
             if (right) {
-                browser.raw().sendMousePress(px, py, 1);
+                browser.raw().onMouseClicked(rightClick(px, py), true);
             } else {
-                browser.raw().sendMouseRelease(px, py, 1);
+                browser.raw().onMouseReleased(rightClick(px, py));
             }
             lastRightDown = right;
         }
+    }
+
+    /** A left-button mouse event at the given pixel, carrying the live modifiers. */
+    private MouseButtonEvent leftClick(int x, int y) {
+        return new MouseButtonEvent(x, y, new MouseButtonInfo(0, lastModifiers));
+    }
+
+    /** A right-button mouse event at the given pixel, carrying the live modifiers. */
+    private MouseButtonEvent rightClick(int x, int y) {
+        return new MouseButtonEvent(x, y, new MouseButtonInfo(1, lastModifiers));
     }
 
     private void releaseBrowserFocus() {
@@ -650,7 +667,7 @@ public final class ScreenMineClient implements ClientModInitializer {
                 screen.browser.navigate(info.url, true);
             }
             chat(Component.literal(Lang.t("chat.attached", info.displayName()))
-                    .formatted(ChatFormatting.GREEN));
+                    .withStyle(ChatFormatting.GREEN));
         }
     }
 
@@ -828,7 +845,7 @@ public final class ScreenMineClient implements ClientModInitializer {
             }
             case "welcome" -> {
                 state.you = p.get("you").getAsString();
-                chat(Component.literal(Lang.t("chat.connected", state.you)).formatted(ChatFormatting.GREEN));
+                chat(Component.literal(Lang.t("chat.connected", state.you)).withStyle(ChatFormatting.GREEN));
             }
             case "friends" -> {
                 copyServers(p);
@@ -839,17 +856,17 @@ public final class ScreenMineClient implements ClientModInitializer {
                 copy(p, "invites", state.invites);
             }
             case "friend_request" -> chat(Component.literal(Lang.t("chat.friend.request",
-                    p.get("from").getAsString(), menuKeyName())).formatted(ChatFormatting.YELLOW));
+                    p.get("from").getAsString(), menuKeyName())).withStyle(ChatFormatting.YELLOW));
             case "invite" -> {
                 String from = p.get("from").getAsString();
                 if (p.has("server")) {
                     state.serverOf.put(from, p.get("server").getAsString());
                 }
                 chat(Component.literal(Lang.t("chat.invite", from, menuKeyName()))
-                        .formatted(ChatFormatting.GOLD));
+                        .withStyle(ChatFormatting.GOLD));
                 if (p.has("same_server") && !p.get("same_server").getAsBoolean()) {
                     chat(Component.literal(Lang.t("chat.invite.servers"))
-                            .formatted(ChatFormatting.YELLOW));
+                            .withStyle(ChatFormatting.YELLOW));
                 }
             }
             case "session" -> {
@@ -865,8 +882,8 @@ public final class ScreenMineClient implements ClientModInitializer {
             case "timeline" -> onTimeline(p);
             case "stream_ctl" -> onStreamCtl(p);
             case "stream_state" -> onStreamState(p);
-            case "info" -> chat(Component.literal(p.get("msg").getAsString()).formatted(ChatFormatting.AQUA));
-            case "error" -> chat(Component.literal(p.get("msg").getAsString()).formatted(ChatFormatting.RED));
+            case "info" -> chat(Component.literal(p.get("msg").getAsString()).withStyle(ChatFormatting.AQUA));
+            case "error" -> chat(Component.literal(p.get("msg").getAsString()).withStyle(ChatFormatting.RED));
             default -> LOG.debug("unhandled packet {}", t);
         }
     }
@@ -893,8 +910,8 @@ public final class ScreenMineClient implements ClientModInitializer {
             }
         }
         Minecraft mc = Minecraft.getInstance();
-        if (mc.currentScreen instanceof dev.screenmine.gui.MenuJoinChoice menu) {
-            menu.clearAndInit();
+        if (mc.gui.screen() instanceof dev.screenmine.gui.MenuJoinChoice menu) {
+            menu.refresh();
         }
     }
 
@@ -903,7 +920,7 @@ public final class ScreenMineClient implements ClientModInitializer {
         state.streams.put(info.id, info);
         world.attach(info.id, info.url);
         if (!info.owner.equals(state.you)) {
-            chat(Component.literal(Lang.t("chat.stream.new", info.owner)).formatted(ChatFormatting.AQUA));
+            chat(Component.literal(Lang.t("chat.stream.new", info.owner)).withStyle(ChatFormatting.AQUA));
         }
     }
 
@@ -952,7 +969,7 @@ public final class ScreenMineClient implements ClientModInitializer {
         }
         if (p.has("by")) {
             chat(Component.literal(p.get("by").getAsString() + ": " + humanAction(action))
-                    .formatted(ChatFormatting.DARK_AQUA));
+                    .withStyle(ChatFormatting.DARK_AQUA));
         }
     }
 
@@ -1010,11 +1027,11 @@ public final class ScreenMineClient implements ClientModInitializer {
      * per player, since two single-player worlds are never the same place.
      */
     public static String currentServerId(Minecraft mc) {
-        ServerInfo info = mc.getCurrentServerEntry();
-        if (info != null && info.address != null && !info.address.isBlank()) {
-            return info.address.toLowerCase(java.util.Locale.ROOT);
+        ServerData info = mc.getCurrentServer();
+        if (info != null && info.ip != null && !info.ip.isBlank()) {
+            return info.ip.toLowerCase(java.util.Locale.ROOT);
         }
-        return "single:" + mc.getSession().getUsername();
+        return "single:" + mc.getUser().getName();
     }
 
     private void reportServer(Minecraft mc) {
@@ -1045,8 +1062,8 @@ public final class ScreenMineClient implements ClientModInitializer {
 
     public static void chat(Component text) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.inGameHud != null) {
-            mc.inGameHud.getChatHud().addMessage(text);
+        if (mc.gui != null && mc.gui.hud != null) {
+            mc.gui.hud.getChat().addClientSystemMessage(text);
         }
     }
 }

@@ -75,6 +75,15 @@ public final class BrowserFullScreen extends Screen {
         LOG.info("fit to window {}x{}", w.getWidth(), w.getHeight());
     }
 
+    /**
+     * Minecraft hands out GUI-scaled coordinates; CEF wants pixels in the
+     * browser viewport. Passing the event through unchanged sends every click to
+     * half its position, which lands nowhere near what the user aimed at.
+     */
+    private static MouseButtonEvent toPixels(MouseButtonEvent e) {
+        return new MouseButtonEvent(px(e.x()), px(e.y()), e.buttonInfo());
+    }
+
     /** GUI-scaled coordinate to a real pixel, for the browser's mouse input. */
     private static int px(double scaled) {
         return (int) Math.round(scaled * Minecraft.getInstance().getWindow().getGuiScale());
@@ -147,7 +156,7 @@ public final class BrowserFullScreen extends Screen {
                 event.button(), doubled, event.x(), event.y(),
                 px(event.x()), px(event.y()),
                 Minecraft.getInstance().getWindow().getGuiScale());
-        b.onMouseClicked(event, doubled);
+        b.onMouseClicked(toPixels(event), doubled);
         b.setFocus(true);
         return true;
     }
@@ -159,7 +168,7 @@ public final class BrowserFullScreen extends Screen {
             return super.mouseReleased(event);
         }
         LOG.info("IN mouseReleased btn={}", event.button());
-        b.onMouseReleased(event);
+        b.onMouseReleased(toPixels(event));
         return true;
     }
 
@@ -177,7 +186,7 @@ public final class BrowserFullScreen extends Screen {
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
         MCEFBrowser b = browser();
         if (b != null) {
-            b.onMouseMoved(px(event.x()), px(event.y()));
+            b.onMouseMoved(px(event.x()), px(event.y()));  // ja em pixels
             return true;
         }
         return super.mouseDragged(event, dx, dy);

@@ -62,6 +62,7 @@ public final class BrowserInstance {
             "else if(e.key==='Home'){set(e,0,0);e.preventDefault();}" +
             "else if(e.key==='End'){set(e,v.length,v.length);e.preventDefault();}" +
             "t.dispatchEvent(new Event('input',{bubbles:true}));},true);})();" +
+            "var lastMedia=-1,lastVol=-1;" +
             "setInterval(function(){try{" +
             "var all=document.querySelectorAll('video,audio');" +
             "for(var i=0;i<all.length;i++){var e=all[i];" +
@@ -76,23 +77,23 @@ public final class BrowserInstance {
             "var u=window.location.href.replace(/\\|/g,'');" +
             "var s='SM|'+t+'|'+p+'|'+ed+'|'+ad+'|'+u+'|'+pageTitle().replace(/\\|/g,' ').slice(0,120);" +
             "if(s!==last){last=s;document.title=s;}" +
-            "}catch(e){}},250);" +
-            // One-shot self report. The volume bug turned out to be invisible from
-            // Java: applyGain looked like it worked and nothing happened in the
-            // page. These are the three numbers that tell them apart - what Java
-            // last pushed, how many media elements the querySelectorAll saw, and
-            // what the element's volume actually is.
-            "setTimeout(function(){try{" +
-            "var all=document.querySelectorAll('video,audio');" +
-            "var v=document.querySelector('video');" +
-            "var a=document.activeElement;" +
+            // Self report, on change only. The mute bug was invisible from Java:
+            // applyGain looked correct and nothing happened in the page. These
+            // are the numbers that tell the causes apart - vol is what Java last
+            // pushed, media is how many elements the querySelectorAll saw, and
+            // vvolume is what the element's volume actually is. Logging on
+            // change means the interesting 0 -> 1 transition cannot be missed,
+            // which a single sample 1.5s after injection did (12:55:32, media=0,
+            // YouTube had not created its player yet).
+            "if(all.length!==lastMedia||Math.abs(window.__smVol-lastVol)>0.001){" +
+            "lastMedia=all.length;lastVol=window.__smVol;" +
             "console.log(\"" + CodecProbe.AGENT_PREFIX + "vol=\"+window.__smVol" +
             "+\"|media=\"+all.length" +
             "+\"|vvolume=\"+(v?v.volume.toFixed(2):'-')" +
             "+\"|vpaused=\"+(v?(v.paused?'1':'0'):'-')" +
-            "+\"|editable=\"+(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.isContentEditable)?'1':'0')" +
-            "+\"|edit=\"+(window.__smEdit?'1':'0'));" +
-            "}catch(e){console.log(\"" + CodecProbe.AGENT_PREFIX + "error=\"+e);}},1500);" +
+            "+\"|editable=\"+ed);" +
+            "}" +
+            "}catch(e){}},250);" +
             "})();";
 
     public final String streamId;

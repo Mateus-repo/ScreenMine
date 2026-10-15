@@ -20,7 +20,60 @@ Porque é que o vídeo toca no YouTube e não noutros sítios?
 | `https://strefizstreamsrv.ddns.net/web/#/home` | ❌ idem |
 
 A hipótese inicial foi "o Chromium do JCEF não traz codecs proprietários". **Esta
-hipótese foi investigada e ficou mais fraca, não mais forte.** Ver §3.
+hipótese foi investigada e ficou mais fraca, não mais forte** (§3) — e depois
+**provada em runtime** (§1b), que é o que conta.
+
+---
+
+## 1b. RESPOSTA — confirmada em runtime a 2026-10-15 12:55
+
+A sonda `CodecProbe` correu dentro da página e devolveu isto:
+
+```
+avc1.42E01E.canPlayType=-            H.264       ✗
+avc1.64001F.canPlayType=-            H.264 high  ✗
+mp4a.40.2.canPlayType=-              AAC         ✗
+hev1.canPlayType=-                   HEVC        ✗
+vp09.00.10.08.canPlayType=probably    VP9         ✓
+av01.0.05M.08.canPlayType=probably   AV1         ✓
+opus.canPlayType=probably            Opus        ✓
+vorbis.canPlayType=probably          Vorbis      ✓
+MediaSource=yes
+```
+
+`canPlayType` devolve `""` (aqui printed como `-`) quando o codec não existe de
+todo. Portanto: **o Chromium empacotado pelo `mcef-modern` não tem H.264, nem AAC,
+nem HEVC.** Só codecs livres.
+
+Isto explica exactamente o padrão da tabela em §1:
+
+| Sítio | Codec servido | Resultado |
+|---|---|---|
+| youtube.com | VP9 + Opus | ✅ |
+| medal.tv / tiktok.com / o meu servidor | H.264 + AAC | ❌ |
+
+`MediaSource=yes` e `mse=yes` para VP9/AV1 provam que não é falta de MSE: a
+pipeline existe, falta-lhe o demuxer/demultiplexer de MP4 com H.264.
+
+### Duas leituras secundárias do mesmo log
+
+- `ua=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like=Gecko) MCEF-Modern/0 Safari/537.36`
+  — o browser **denuncia-se**. Qualquer sítio que faça detecção de bot, ou que sirva
+  uma versão alternativa a bots, pode dar-nos outra coisa. Guardar para quando o
+  codec não for a explicação.
+- `secureContext=no` — injectado em `about:blank` no momento da leitura, não na
+  página final. Só por si não prova nada sobre https, mas explica por que o
+  YouTube ainda não tinha `<video>` (`media=0`).
+
+### Conclusão, e o que ela **não** prova
+
+Não prova que o `libcef.dll` do `jcefmaven` venha sem codecs por *desactivação* —
+continua a ser verdade que não há nenhuma flag `proprietary_codecs` na cadeia
+(§3). Prova que o resultado final é o mesmo: **os codecs não estão lá.** Qual é
+que deles, ninguém precisa de gastar 200 GB para descobrir.
+
+Consequência prática: nenhum caminho dentro do mod arranja isto. Ver §3e para os
+custos.
 
 ---
 
@@ -450,10 +503,11 @@ Não vou escrever uma tabela de codecs aqui a partir de palpites.
 | Origem dos binários / variante com codecs | ✅ **não existe** no `jcefmaven` (§3c) |
 | mcef-modern aceita outro binário? | ✅ **não**, via API; só por disco, e sem verificação de hash (§3d) |
 | Custo das saídas | ✅ estimado (§3e) |
-| Sonda de codecs em código | ✅ feita, compilada, **por testar em jogo** (§4) |
-| **Tabela de codecs real** | ❌ **não existe** — precisa de correr em jogo (§6b) |
+| Sonda de codecs em código | ✅ feita e **corrida em jogo** (§4) |
+| **Tabela de codecs real** | ✅ **obtida a 2026-10-15 12:55** — sem H.264/AAC/HEVC (§1b) |
 | Bug A: cadeia de teclas | ✅ verificada (§5) |
 | Bug A: hipótese do `CHAR` | ⏳ **aberta** — decide o teste de §6 |
-| Bug B: tecla `N` (mutar) | ⏳ por investigar, falta saber o contexto do teste |
+| Bug B: tecla `N` (mutar) | 🔬 a instrumentar — já sabemos que `__smVol=0` sai da JVM e chega à página (`vol=0.7` no auto-relato); falta o `vvolume` depois de o `<video>` existir |
 
-**Nada disto foi provado em jogo.** A sonda compila; falta o log.
+**O que continua por provar em jogo:** só o bug B. Os codecs já não são
+hipótese.

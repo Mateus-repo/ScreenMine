@@ -454,6 +454,8 @@ ate ao momento o build verde escondia tres bugs de render.
 | 2o teste do port (11:39) | crash `textureView and sampler must both or neither be null` | o sampler tinha de seguir a vista |
 | 3o teste do port (11:38-12:11) | **`BUILD SUCCESSFUL`, ecra no mundo desenhado** | o render esta provado; falta o input |
 | 4o teste (12:41-12:43) | sem `ONLOADEND` no log | **agente nunca injectado** -> causa raiz do N e do shim de edicao (`codecs.md` §5b) |
+| 5o teste (12:47-12:50) | `AGENT injected by retry` — o agente **ja corre no mundo**; a sonda nao reportou | corrigiu o bug A; expoe que o meu canal (`document.title`) perdia a corrida |
+| 6o teste (12:55-12:56) | **tabela de codecs obtida**; `GAIN ... __smVol=0.000` confirmado | bug C **resolvido**; bug B instrumentado |
 
 ### Corrida 2 (11:39) - detalhes
 - **Confirmado em jogo:** a aba de teclas mostra **"ScreenMine"** (a correcao dos
@@ -563,39 +565,87 @@ o problema esta a jusante, no JCEF/CEF.
 > **CORRIGIDO em `spike/codecs`** (about:blank -> handlers -> loadURL, e
 > `pumpAgents()` no tick do mundo). **Por confirmar em jogo.**
 
-### C) VIDEO EM OUTROS SITES - PRIORIDADE 2
+**O que a corrida das 12:55 provou sobre este bug:**
 
-> **Investigacao feita na branch `spike/codecs`, registada em `codecs.md`.**
-> Resumo: a provenance do binario esta verificada
-> (mcef-modern 0.3.3 -> JCEF d3de827 -> CEF 146.0.10 -> Chromium 146.0.7680.179,
-> binarios do `jcefmaven/jcefbuild` 1.0.70). A pesquisa de
-> `ffmpeg_branding`/`proprietary_codecs` na cadeia de build **nao encontrou
-> nenhum argumento**, o que **enfraquece** a hipotese dos codecs em vez de a
-> confirmar. A sonda `CodecProbe` esta escrita e compilada; falta o log.
+```
+[12:55:31] GAIN local-... -> __smVol=0.700
+[12:55:32] agent report: vol=0.7|media=0|vvolume=-|...|edit=1
+[12:55:43] Screen: sound off
+[12:55:43] GAIN local-... -> __smVol=0.000
+```
 
-- URL do utilizador: `https://strefizstreamsrv.ddns.net/web/#/home` (parece
-  Jellyfin/Emby, por confirmar). **Alta prioridade.**
-- Falha com `Playback failed because the media is not supported by this client`.
-- YouTube **funciona**; MedalTV, TikTok e o servidor do utilizador **nao**.
+Duas coisas deixam de ser hipotese:
+1. `edit=1` e `vol=0.7` provam que **o agente esta dentro da pagina** e que o valor
+   da Java **chega** (`window.__smVol`). A correccao do bug A resultou.
+2. `GAIN ... __smVol=0.000` prova que o `N` **manda mesmo o zero** para fora da
+   JVM. O `applyGain` nunca esteve errado.
 
-Padrao sugere codecs: YouTube serve VP9/Opus (livres); os outros servem
-H.264/AAC (proprietarios) e o Chromium embutido no JCEF nao os traz.
+Logo o que falta e o ultimo troco: o `setInterval` do agente a escrever
+`e.volume = 0`. A leitura unica de `media=0` chegou **1,5 s depois da injecao**,
+antes de o YouTube ter criado o player — por isso `vvolume=-` e nao diz nada.
 
-**NAO VERIFICADO. Nao escrever "o JCEF nao tem H.264" sem o log abaixo.**
+**Instrumentacao nova:** o auto-relatorio passou a sair **a cada mudanca** do numero
+de elementos ou de `__smVol` (em vez de uma vez), para a transicao interesante
+`0 -> 1` nao poder escapar. Passa a mostrar `vvolume` com o video existente.
 
-Sonda a correr via `executeJavaScript` no carregamento de cada pagina, a logar:
-- `document.createElement('video').canPlayType(...)` para `avc1.42E01E`,
-  `avc1.64001F` + `mp4a.40.2`, `hev1`, `vp09.00.10.08`, `av01.0.05M.08`, opus,
-  vorbis;
-- `MediaSource.isTypeSupported(...)` para os mesmos;
-- `navigator.userAgent`.
+### C) VIDEO EM OUTROS SITES - PRIORIDADE 2 - **CAUSA CONFIRMADA**
 
-**Ja implementada** em `dev.screenmine.diag.CodecProbe`, ligada com
-`debug.codecs=1` em `config/screenmine.properties`. Resposta no `latest.log`, no
-logger `ScreenMine/codecs`, uma linha por codec. Compila; **ainda nao correu em
-jogo**. Detalhes em `codecs.md` §4.
+> **RESOLVIDO a 2026-10-15 12:55.** A sonda correu dentro da pagina e deu:
+>
+> ```
+> avc1.42E01E.canPlayType=-            H.264       ✗
+> avc1.64001F.canPlayType=-            H.264 high  ✗
+> mp4a.40.2.canPlayType=-              AAC         ✗
+> hev1.canPlayType=-                   HEVC        ✗
+> vp09.00.10.08.canPlayType=probably    VP9         ✓
+> av01.0.05M.08.canPlayType=probably   AV1         ✓
+> opus.canPlayType=probably            Opus        ✓
+> vorbis.canPlayType=probably          Vorbis      ✓
+> MediaSource=yes
+> ```
+>
+> `canPlayType` devolve `""` (impresso como `-`) quando o codec nao existe. Logo:
+> **o Chromium do `mcef-modern` nao tem H.264, nem AAC, nem HEVC.** Nao e
+> hipotese, e o log. Detalhe em `codecs.md` §1b.
+>
+> A investigacao estatica anterior (proveniencia do binario, ausencia de
+> `proprietary_codecs`) **nao prova nada sobre isto** — provou que ninguem liga os
+> codecs, nao que eles faltam. Faltava o runtime, e o runtime correu.
 
-Sem esse log a causa fica por provar. So depois de o ver:
+Explicacao do padrao, agora com base:
+- youtube.com ✅ — serve **VP9 + Opus**, ambos livres.
+- medal.tv / tiktok.com / o servidor do utilizador ❌ — servem **H.264 + AAC**.
+
+`MediaSource=yes` e `mse=yes` para VP9/AV1 provam que a pipeline existe; falta-lhe
+o demultiplexer de MP4 com H.264.
+
+**Nenhum caminho dentro do mod resolve isto.** Custos reais em `codecs.md` §3e:
+(a) transcodificacao no servidor para VP9/AV1 + Opus — zero trabalho no mod,
+zero problema legal; (b) build propria do JCEF — 200-300 GB, horas, area cinzenta
+de patentes; (c) descodificacao so por hardware — precisa da mesma build; (d)
+libvlc/ffmpeg para a mesma textura — grande.
+
+**Proximo passo consoante a opcao:** se for (a), so mexer no servidor. O mod nao
+precisa de nada.
+
+Do mesmo log, duas leituras secundarias a guardar para mais tarde:
+- `ua=... MCEF-Modern/0 Safari/537.36` — o browser **denuncia-se**. Sitios com
+  deteccao de bot podem servir outra coisa. Guardado para quando o codec nao for a
+  explicacao.
+- `secureContext=no` — a sonda foi injectada em `about:blank`, nao na pagina final.
+  Explica `media=0` nesse instante (o YouTube ainda nao tinha criado o player).
+
+Investigacao completa e proveniencia do binario: `codecs.md` §2, §3, §3b-3e.
+
+Como foi provado, e o que ficou registado para nao se repetir o trabalho:
+- A sonda (`dev.screenmine.diag.CodecProbe`, ligada com `debug.codecs=1`) mede
+  `canPlayType` e `MediaSource.isTypeSupported` para os 8 codecs de origem, mais
+  `navigator.userAgent` e `isSecureContext`.
+- Ela **nao** passa pelo `document.title`, como estava escrito antes. O agente de
+  pagina reescreve o titulo a cada 250 ms e atropelava o relatorio — a corrida das
+  12:47.logou "codec probe ON" e nada mais. Vai agora pelo `console`, que o
+  `CefDisplayHandler.onConsoleMessage` recebe. Assinatura verificada com `javap`:
+  `(CefBrowser, CefSettings.LogSeverity, message, source, int) -> boolean`.
 - (a) de onde vem o binario do JCEF do `mcef-modern` - **JA VERIFICADO**:
   `jcefmaven/jcefbuild` release `1.0.70`, sem nenhum argumento
   `ffmpeg_branding`/`proprietary_codecs` em `compile_windows.bat`,
@@ -611,13 +661,14 @@ Sem esse log a causa fica por provar. So depois de o ver:
     trazer. O `CinemaMod-Fabric` esta em 404. Ver `codecs.md` §3b-3d.
 - (b) custo realista das alternativas (build propria do CEF, outro fork do MCEF,
   ou descodificacao nativa tipo libvlc/ffmpeg para a mesma textura), com custo,
-  risco e licenciamento. **H.264 tem questoes de patentes** - hoje e uso pessoal,
-  mas fica registado para uma eventual publicacao.
+  risco e licenciamento — **JA ESTIMADO**, ver `codecs.md` §3e.
+  **H.264 tem questoes de patentes** - hoje e uso pessoal, mas fica registado para
+  uma eventual publicacao.
 
-Separar sempre as causas possiveis no servidor do utilizador:
-(i) codecs, (ii) certificado/HTTPS (certificado invalido, ddns), (iii) cookies /
-sessao / login persistente entre sessoes do jogo, (iv) autoplay,
-(v) controlo por teclado/rato. **Nao assumir que e so codec.**
+Causas que **nao** são codecs continuam na lista, para quando a transcodificacao
+resolver o video e aparecer outro sintoma: (ii) certificado/HTTPS (certificado
+invalido, ddns), (iii) cookies / sessao / login persistente entre sessoes do jogo,
+(iv) autoplay, (v) controlo por teclado/rato.
 
 **DRM (Netflix, Disney+) nao vai funcionar por esta via.**
 

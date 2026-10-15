@@ -404,14 +404,23 @@ Checklist completa em baixo.
 **Input**
 - [ ] `M` abre o menu, `B` abre o overlay, `C` entra em control mode
 - [ ] No overlay: escrever texto, clicar, scroll, Shift
-- [ ] Backspace apaga (continua por resolver: shim JS, agente so corre se o `pumpAgent` disparar)
-- [ ] Ctrl+V cola
+- [ ] Backspace apaga (Bug A1 - continua por resolver)
+- [ ] Ctrl+V cola (Bug A2)
+- [ ] **Bug A3:** `Alt+seta` esquerda/direita: voltar/avancar
+- [ ] **Bug A4:** arrastar com o rato **seleciona texto** (confirmar com `Ctrl+C`)
 - [ ] **Control mode:** o rato move/clica no browser; **roda e teclas NAO chegam** (`TODO(port)` dos mixins)
 - [ ] WASD continua a andar enquanto control mode esta ligado
 - [ ] `Esc` sai de control mode e nao abre o menu do jogo
 
+**Bug B - tecla N (mutar)**
+- [ ] `N` muta o audio (dizer **onde** foi testado: overlay / frente ao ecra no
+      mundo / com video a tocar)
+
 **Conteudo**
 - [ ] YouTube real: `?v=` carrega, play/pause, seek, volume
+- [ ] **Bug C:** `https://strefizstreamsrv.ddns.net/web/#/home` reproduz video
+- [ ] **Bug C:** TikTok / MedalTV reproduzem video
+- [ ] **Bug C:** a sonda de codecs faz log em `latest.log`
 - [ ] Mudas de browser: a URL e partilhada com a sessao
 
 **Colocacao**
@@ -442,6 +451,7 @@ ate ao momento o build verde escondia tres bugs de render.
 | spike/render | compilou, **nunca renderizou** | um spike verde nao prova que desenha |
 | 1o teste do port (11:28) | crash `Missing elements in vertex` | faltavam atributos no vertice |
 | 2o teste do port (11:39) | crash `textureView and sampler must both or neither be null` | o sampler tinha de seguir a vista |
+| 3o teste do port (11:38-12:11) | **`BUILD SUCCESSFUL`, ecra no mundo desenhado** | o render esta provado; falta o input |
 
 ### Corrida 2 (11:39) - detalhes
 - **Confirmado em jogo:** a aba de teclas mostra **"ScreenMine"** (a correcao dos
@@ -458,5 +468,103 @@ ate ao momento o build verde escondia tres bugs de render.
   pelo menu.
 - Correcao: `getSampler()` devolve `null` sempre que a vista e `null`. E
   `TextureManager.release(id)` quando um ecra e detached.
+
+### Corrida 3 (11:38-12:11) - **O RENDER ESTA PROVADO**
+
+Screenshot `run/screenshots/2026-10-15_12.10.33.png`: um ecra no mundo 3D com uma
+pagina real (MedalTV) a ser desenhada.
+
+Verificado **em jogo** nesta corrida:
+- O quad aparece no mundo, **nao esta espelhado** (o texto le-se ao contrario
+  seria `MedalTV` invertido; le-se normal).
+- Esta **iluminado** (o lightmap full-bright fez o efeito).
+- **Nao desapareceu** e **nao se multiplicou** depois das correcoes de camera.
+- `B` funciona (abre/fecha o overlay), `N` continua a nao fazer nada.
+- YouTube reproduz.
+- `BUILD SUCCESSFUL`, sem crash.
+
+Isto fecha o bloco de maior risco do port. As duas correcoes que oarziam
+funcionaram: `d600b7d` (camera subtraida uma vez so) e `9664974` (sampler segue
+a vista).
+
+## Bugs conhecidos (reportados pelo utilizador em 2026-10-15)
+
+Estado: **funciona** -> tecla B, ecra no mundo, YouTube, spawn, volume.
+
+### A) INPUT DE EDICAO - PRIORIDADE 1
+
+Nao funciona **no overlay (B) e no control mode do mundo**:
+`Ctrl+A`, `Ctrl+C`, `Ctrl+V`, `Backspace`, `Enter`, seleccionar texto com o rato
+para copiar, `Alt+seta` esquerda/direita (voltar/avancar).
+
+**Hipotese a PROVAR (do utilizador, nao confirmada):** o Minecraft so dispara
+`charTyped` para caracteres imprimiveis. `Enter` (13), `Backspace` (8) e `Tab` (9)
+nunca geram o evento `CHAR` que o CEF offscreen espera
+(`RAWKEYDOWN` -> `CHAR` -> `KEYUP`). Isso explica "a tecla chega mas nao faz
+nada": o `keyPressed` passa, o `CHAR` falta.
+
+Caveat do registo: **isto e hipotese**, e do raciocinio sobre o Minecraft, nao
+sobre o codigo do `mcef-modern`. Antes de mexer, confirmar com `javap`:
+1. metodos de teclas do `CefBrowser` (`sendKeyPress`/`sendKeyRelease`/
+   `sendKeyTyped` ou equivalente) e o que o `onKeyPressed` do `mcef-modern`
+   realmente envia para Backspace e Enter;
+2. se falta o evento `CHAR`, sintetiza-lo (`\b`, `\r`, `\t`).
+
+Atalhos `Ctrl` a implementar explicitamente (o CEF offscreen nao os executa
+sozinho): `Ctrl+A` selectAll, `Ctrl+C` copy, `Ctrl+X` cut, `Ctrl+V` paste,
+`Ctrl+Z`/`Ctrl+Y` undo/redo, `Alt+esquerda/direita` goBack/goForward (com
+`canGoBack`/`canGoForward`). `Ctrl+C`/`Ctrl+V` tem de usar o clipboard do
+**sistema**, nao um interno do browser.
+
+Seleccao de texto: arrastar com botao esquerdo tem de enviar movimento **com o
+modificador premido** (`EVENTFLAG_LEFT_MOUSE_BUTTON` ou equivalente), senao o CEF
+nao faz selecao. Verificar `mouseDragged`, duplo clique e triplo clique.
+
+Teste: pagina local com `createBrowser` + `data:` URL, a registar
+`keydown`/`keypress`/`input` (com `key`, `code`, `keyCode`), um `textarea` longo,
+`window.getSelection()` e o valor do campo apos cada accao. **Tabela por tecla.**
+
+### B) TECLA N (MUTAR) NAO FAZ NADA - PRIORIDADE 2
+
+Por investigar com logs: o `KeyMapping` esta registado na categoria nova? o handler
+e chamado (`consumeClick`/tick)? a tecla esta a ser consumida por outro handler?
+o estado de mute chega ao audio do browser (volume 0 via JS, ou no pipeline de
+audio)? **Falta saber em que contexto foi testado** (overlay, frente ao ecra no
+mundo, ou com video a tocar) - isso decide em que parte do codigo esta o problema.
+
+### C) VIDEO EM OUTROS SITES - PRIORIDADE 2
+
+- URL do utilizador: `https://strefizstreamsrv.ddns.net/web/#/home` (parece
+  Jellyfin/Emby, por confirmar). **Alta prioridade.**
+- Falha com `Playback failed because the media is not supported by this client`.
+- YouTube **funciona**; MedalTV, TikTok e o servidor do utilizador **nao**.
+
+Padrao sugere codecs: YouTube serve VP9/Opus (livres); os outros servem
+H.264/AAC (proprietarios) e o Chromium embutido no JCEF nao os traz.
+
+**NAO VERIFICADO. Nao escrever "o JCEF nao tem H.264" sem o log abaixo.**
+
+Sonda a correr via `executeJavaScript` no carregamento de cada pagina, a logar:
+- `document.createElement('video').canPlayType(...)` para `avc1.42E01E`,
+  `avc1.64001F` + `mp4a.40.2`, `hev1`, `vp09.00.10.08`, `av01.0.05M.08`, opus,
+  vorbis;
+- `MediaSource.isTypeSupported(...)` para os mesmos;
+- `navigator.userAgent`.
+
+Sem esse log a causa fica por provar. So depois de o ver:
+- (a) de onde vem o binario do JCEF do `mcef-modern` (URL/repo, versao
+  `jcef146.0.10`) e se existe build alternativa com codecs proprietarios
+  (`ffmpeg_branding=Chrome`, `proprietary_codecs=true`) ou opcao de configuracao;
+- (b) custo realista das alternativas (build propria do CEF, outro fork do MCEF,
+  ou descodificacao nativa tipo libvlc/ffmpeg para a mesma textura), com custo,
+  risco e licenciamento. **H.264 tem questoes de patentes** - hoje e uso pessoal,
+  mas fica registado para uma eventual publicacao.
+
+Separar sempre as causas possiveis no servidor do utilizador:
+(i) codecs, (ii) certificado/HTTPS (certificado invalido, ddns), (iii) cookies /
+sessao / login persistente entre sessoes do jogo, (iv) autoplay,
+(v) controlo por teclado/rato. **Nao assumir que e so codec.**
+
+**DRM (Netflix, Disney+) nao vai funcionar por esta via.**
 
 ## Registo de sessoes

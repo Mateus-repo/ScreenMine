@@ -72,6 +72,8 @@ public final class ScreenMineClient implements ClientModInitializer {
     private int audioTicker;
     private int syncTicker;
     private String lastReportedServer = "";
+    /** The server id we want the companion server to know about. */
+    private String pendingServerId = "";
     private boolean loggedIn;
 
     /** Whether the world input hooks are in place; see TODO(port) in installInputHooks. */
@@ -1058,16 +1060,31 @@ public final class ScreenMineClient implements ClientModInitializer {
         return "single:" + mc.getUser().getName();
     }
 
+    /**
+     * Tells the server which Minecraft server we are on.
+     *
+     * <p>This used to mark the id as reported before the packet had anywhere to
+     * go. {@link NetClient#send} drops anything sent while the status is not
+     * ONLINE, and on joining a world the status is CONNECTING - so the very first
+     * packet was discarded, {@code lastReportedServer} already said it had been
+     * sent, and the server never learned where we were until the player moved to
+     * a different server. The friends and invites screens then showed "unknown"
+     * for good.
+     *
+     * <p>Two ids now: the one we want reported, and the one that actually was.
+     * The first is kept across disconnects so a reconnect re-sends it; the
+     * second is cleared when the connection drops.
+     */
     private void reportServer(Minecraft mc) {
-        if (!net.isOnline()) {
-            return;
-        }
         String id = currentServerId(mc);
-        if (id.equals(lastReportedServer)) {
+        if (!id.equals(pendingServerId)) {
+            pendingServerId = id;
+            state.myServer = id;
+        }
+        if (!net.isOnline() || id.equals(lastReportedServer)) {
             return;
         }
         lastReportedServer = id;
-        state.myServer = id;
         net.send(Packets.where(id));
     }
 

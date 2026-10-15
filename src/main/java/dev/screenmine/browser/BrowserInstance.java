@@ -122,12 +122,21 @@ public final class BrowserInstance {
         if (!MCEFApi.initialize().isDone()) {
             return false;
         }
+        // Create on about:blank, then navigate, so the load and display handlers
+        // are registered before any real page starts loading. Creating straight at
+        // the target URL raced: a fast page (a data: URL, or a cache hit) fired
+        // onLoadEnd before installHandlersOnce had run, so onLoadEnd never fired at
+        // all and the page agent was never injected. That silently killed the
+        // playback tracking and the editing shim.
         LOGGER.info("CREATE url={} surface={}x{}", currentUrl, surfaceWidth, surfaceHeight);
-        browser = MCEFApi.getInstance().createBrowser(currentUrl, false);
-        LOGGER.info("CREATED surface={}x{} textureView={}", surfaceWidth, surfaceHeight, browser.getTextureView() != null);
+        browser = MCEFApi.getInstance().createBrowser("about:blank", false);
         browser.resize(surfaceWidth, surfaceHeight);
         installHandlersOnce(browser.getCefBrowser().getClient());
         LIVE.put(browser.getCefBrowser().getIdentifier(), this);
+        if (!"about:blank".equals(currentUrl)) {
+            LOGGER.info("NAVIGATE to {}", currentUrl);
+            browser.getCefBrowser().loadURL(currentUrl);
+        }
         return true;
     }
 

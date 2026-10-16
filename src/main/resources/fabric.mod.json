@@ -9,6 +9,9 @@
   ],
   "contact": {},
   "license": "AGPL-3.0-only",
+  "breaks": {
+    "screenmine_mp": "*"
+  },
   "icon": "assets/screenmine/icon.png",
   "environment": "client",
   "entrypoints": {

@@ -100,6 +100,7 @@ public final class BrowserInstance {
             "(function(){if(window.__smAgent)return;window.__smAgent=1;" +
             "if(typeof window.__smVol!=='number')window.__smVol=0.7;" +
             "var last='';" +
+            "var lastSent='';" +
             "function pageTitle(){var m=document.querySelector('meta[property=\"og:title\"]');" +
             "if(m&&m.content)return m.content;" +
             "var h=document.querySelector('h1.ytd-watch-metadata,h1.title');" +
@@ -119,15 +120,21 @@ public final class BrowserInstance {
             "var ed=(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.isContentEditable))?'1':'0';" +
             "var ad=(document.querySelector('.ad-showing,.video-ads,.ytp-ad-player-overlay,.ytp-ad-module')!==null)?'1':'0';" +
             "var u=window.location.href.replace(/\\|/g,'');" +
+            // State goes out through the console, not through document.title.
+            //
+            // The title channel is unusable and it took four runs to accept it.
+            // The page writes document.title too - YouTube does, with the video
+            // name - so the mod and the page fight over one string, and the
+            // mod lost every time: not one SM| receipt in any run, which is
+            // why isEditing() has been permanently false and the world input
+            // mixins refuse to forward keys. Console has no owner to race with.
+            //
+            // The title is still rewritten, because something in the chain may
+            // still be listening for it, and it costs nothing. The payload is
+            // the same shape, so parseState is unchanged.
             "var s='SM|'+t+'|'+p+'|'+ed+'|'+ad+'|'+u+'|'+pageTitle().replace(/\\|/g,' ').slice(0,120);" +
-            // Depends on what the DOCUMENT holds, not on what we last wrote.
-            // The old guard was `if(s!==last)`, and `last` is our own payload -
-            // so the instant the page set document.title itself (YouTube does,
-            // with the video name) the agent stopped rewriting, the mod stopped
-            // receiving SM|, and everything derived from it froze at its initial
-            // value: hasVideo, playbackPaused, isEditing, isAd. That is a single
-            // candidate for both "N does nothing" and "editing keys never work".
             "if(s!==last||document.title.slice(0,3)!=='SM|'){last=s;document.title=s;}" +
+            "if(s!==lastSent){lastSent=s;console.log(\"" + STATE_PREFIX + "\"+s.slice(3));}" +
             // Self report, on change only. href and top are the two fields that
             // say whether this agent is even in the document anyone is looking
             // at: an about:blank href means executeJavaScript landed on the
@@ -414,13 +421,29 @@ private volatile boolean closed;
             @Override
             public boolean onConsoleMessage(CefBrowser b, org.cef.CefSettings.LogSeverity level,
                     String message, String source, int line) {
-                if (message == null || !CodecProbe.enabled()) {
+                if (message == null) {
                     return false;
                 }
-                if (message.startsWith(CodecProbe.PREFIX)) {
-                    CodecProbe.report(message.substring(CodecProbe.PREFIX.length()));
-                } else if (message.startsWith(CodecProbe.AGENT_PREFIX)) {
-                    CodecProbe.agentReport(message.substring(CodecProbe.AGENT_PREFIX.length()));
+                // The page's state channel. Not gated on debug.codecs: this is
+                // how isEditing(), hasVideo() and playbackPaused() are fed, and
+                // gating it would mean the mod quietly stops working when a
+                // diagnostic flag is off.
+                if (message.startsWith(STATE_PREFIX)) {
+                    BrowserInstance self = lookup(b);
+                    if (self != null) {
+                        self.logStateReport(message);
+                        self.parseState(message);
+                    }
+                    return true;
+                }
+                // Diagnostics only, and only when asked for. Pages log plenty
+                // of their own, so only our prefixed lines are taken.
+                if (CodecProbe.enabled()) {
+                    if (message.startsWith(CodecProbe.PREFIX)) {
+                        CodecProbe.report(message.substring(CodecProbe.PREFIX.length()));
+                    } else if (message.startsWith(CodecProbe.AGENT_PREFIX)) {
+                        CodecProbe.agentReport(message.substring(CodecProbe.AGENT_PREFIX.length()));
+                    }
                 }
                 return false;   // let the other console listeners keep it
             }

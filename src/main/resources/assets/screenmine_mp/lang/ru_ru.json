@@ -1,0 +1,14 @@
+{
+  "key.category.screenmine_mp.main": "ScreenMine",
+  "key.screenmine_mp.menu": "Мини-меню",
+  "key.screenmine_mp.control": "Управлять экраном",
+  "key.screenmine_mp.browser": "Открыть браузер",
+  "key.screenmine_mp.move": "Двигать экран",
+  "key.screenmine_mp.bigger": "Увеличить экран",
+  "key.screenmine_mp.smaller": "Уменьшить экран",
+  "key.screenmine_mp.playpause": "Пауза / плей",
+  "key.screenmine_mp.remove": "Убрать экран",
+  "key.screenmine_mp.volup": "Громче",
+  "key.screenmine_mp.voldown": "Тише",
+  "key.screenmine_mp.mute": "Выключить звук"
+}

@@ -1,0 +1,14 @@
+{
+  "key.category.screenmine_mp.main": "ScreenMine",
+  "key.screenmine_mp.menu": "Mini menu",
+  "key.screenmine_mp.control": "Control screen",
+  "key.screenmine_mp.browser": "Open browser",
+  "key.screenmine_mp.move": "Move screen",
+  "key.screenmine_mp.bigger": "Grow screen",
+  "key.screenmine_mp.smaller": "Shrink screen",
+  "key.screenmine_mp.playpause": "Play / pause",
+  "key.screenmine_mp.remove": "Remove screen",
+  "key.screenmine_mp.volup": "Volume up",
+  "key.screenmine_mp.voldown": "Volume down",
+  "key.screenmine_mp.mute": "Mute"
+}

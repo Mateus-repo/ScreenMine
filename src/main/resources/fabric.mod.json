@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "id": "screenmine",
+  "id": "screenmine_mp",
   "version": "${version}",
-  "name": "ScreenMine",
-  "description": "A real Chromium browser as a flat screen in the Minecraft world: spawn it, move it, resize it, browse and watch YouTube from inside the game. Client-side, works solo with no server. Watching together with friends is planned for a future release and is not available yet.",
+  "name": "ScreenMine (Multiplayer)",
+  "description": "The multiplayer build of ScreenMine: a real Chromium browser as a flat screen in the Minecraft world, shared over a companion server. Use this instead of the plain ScreenMine build, never both - they are the same mod under two ids. Still under construction: see docs/multiplayer-plan.md.",
   "authors": [
     "Mateus"
   ],
   "contact": {},
   "license": "AGPL-3.0-only",
   "breaks": {
-    "screenmine_mp": "*"
+    "screenmine": "*"
   },
-  "icon": "assets/screenmine/icon.png",
+  "icon": "assets/screenmine_mp/icon.png",
   "environment": "client",
   "entrypoints": {
     "client": [
@@ -20,7 +20,7 @@
     ]
   },
   "mixins": [
-    "screenmine.mixins.json"
+    "screenmine_mp.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=${loader_version}",

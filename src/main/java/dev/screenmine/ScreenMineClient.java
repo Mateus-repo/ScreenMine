@@ -41,7 +41,7 @@ import java.util.Map;
 
 public final class ScreenMineClient implements ClientModInitializer {
 
-    public static final String MOD_ID = "screenmine";
+    public static final String MOD_ID = "screenmine_mp";
     public static final Logger LOG = LoggerFactory.getLogger("ScreenMine");
 
     private static ScreenMineClient instance;

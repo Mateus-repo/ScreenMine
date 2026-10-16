@@ -10,7 +10,7 @@ import java.util.Properties;
 
 /**
  * Everything a player can change without recompiling, kept in
- * {@code config/screenmine.properties}.
+ * {@code config/screenmine_mp.properties}.
  *
  * <p>The file is created with a commented template on first launch, so the
  * available keys are discoverable without reading the source. All access goes
@@ -34,10 +34,10 @@ import java.util.Properties;
  */
 public final class Settings {
 
-    private static final Path FILE = Paths.get("config", "screenmine.properties");
+    private static final Path FILE = Paths.get("config", "screenmine_mp.properties");
 
     private static final String TEMPLATE = """
-            # ScreenMine settings.
+            # ScreenMine (Multiplayer) settings.
             #
             # Interface language: en or ru. The mini menu writes this for you.
             language=en
@@ -126,7 +126,7 @@ public final class Settings {
         try {
             Files.createDirectories(FILE.getParent());
             try (OutputStream out = Files.newOutputStream(FILE)) {
-                PROPS.store(out, "ScreenMine settings");
+                PROPS.store(out, "ScreenMine (Multiplayer) settings");
             }
         } catch (IOException | RuntimeException ex) {
             ScreenMineClient.LOG.warn("could not write {}: {}", FILE, ex.toString());

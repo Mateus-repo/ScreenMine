@@ -5,7 +5,7 @@ package dev.screenmine;
  *
  * <p>The one thing that is deliberately not compiled in is the companion
  * server's address: it belongs to whoever runs the server, not to this source
- * tree, so it is read from {@code config/screenmine.properties} instead. With no
+ * tree, so it is read from {@code config/screenmine_mp.properties} instead. With no
  * address set the mod never opens a socket at all, which is exactly what single
  * player wants.
  */
@@ -25,7 +25,7 @@ public final class Cfg {
      */
     public static final boolean NETWORK_ENABLED = Settings.getBool("network.enabled", false);
 
-    /** ScreenMine companion server, from config/screenmine.properties. */
+    /** ScreenMine companion server, from config/screenmine_mp.properties. */
     public static final String SERVER_HOST = Settings.get("server.host", "");
     public static final int SERVER_PORT = Settings.getInt("server.port", 23481);
 

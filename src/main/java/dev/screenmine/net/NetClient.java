@@ -25,6 +25,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class NetClient {
 
+    private static final org.slf4j.Logger LOGGER =
+            org.slf4j.LoggerFactory.getLogger("ScreenMine/net");
+
     public enum Status {OFFLINE, CONNECTING, ONLINE}
 
     private final Queue<JsonObject> inbound = new ConcurrentLinkedQueue<>();
@@ -56,12 +59,17 @@ public final class NetClient {
     public void start(String playerName) {
         this.playerName = playerName;
         if (!Cfg.serverConfigured()) {
-            // No server address configured: stay offline quietly. Everything
-            // except watching together works without one, and nagging about a
-            // connection the player never asked for would just be noise.
+            // Not switched on, or nothing to switch to. Stay offline quietly:
+            // everything except watching together works without it, and nagging
+            // about a connection the player never asked for would just be noise.
+            // No thread is started and no socket is constructed, which is the
+            // whole point of the default - this build works on any server and
+            // carries no remote control surface it does not need.
             status = Status.OFFLINE;
+            LOGGER.info("NET off - {}; no socket opened", Cfg.networkStatus());
             return;
         }
+        LOGGER.info("NET {} (network.enabled=1, server.host set)", Cfg.networkStatus());
         if (!running.compareAndSet(false, true)) {
             return;
         }

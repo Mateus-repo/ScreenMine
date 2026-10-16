@@ -20,6 +20,10 @@ import java.util.Properties;
  * <p>Known keys:
  * <ul>
  *   <li>{@code language} — {@code en} or {@code ru}; written by the menu</li>
+ *   <li>{@code network.enabled} — {@code 1} allows the mod to open a socket to
+ *       the companion server; {@code 0} (the default) forbids it. Both this
+ *       and an address are needed, so an address left in the file from an
+ *       earlier session does not quietly bring the network back</li>
  *   <li>{@code server.host} — ScreenMine companion server address. Empty by
  *       default: no address means the mod simply never opens a socket, which is
  *       the normal single-player case</li>
@@ -41,6 +45,11 @@ public final class Settings {
             # Companion server, used only for watching together. Leave the host
             # empty and the mod never tries to connect - single player works
             # exactly the same either way.
+            #
+            # network.enabled is a separate switch on purpose. Setting 0 here is
+            # what guarantees this build never opens a socket, even if a host is
+            # still sitting in the file from an earlier session.
+            network.enabled=0
             server.host=
             server.port=23481
             #
@@ -68,6 +77,24 @@ public final class Settings {
         } catch (NumberFormatException ex) {
             return fallback;
         }
+    }
+
+    /**
+     * A yes/no setting.
+     *
+     * <p>Anything that is not plainly a yes counts as no. A switch that guards
+     * whether the mod opens a socket should fail closed: a typo in the file
+     * must not be the thing that turns the network on.
+     */
+    public static synchronized boolean getBool(String key, boolean fallback) {
+        String value = get(key, fallback ? "1" : "0").toLowerCase(java.util.Locale.ROOT);
+        if (value.equals("1") || value.equals("true") || value.equals("yes") || value.equals("on")) {
+            return true;
+        }
+        if (value.equals("0") || value.equals("false") || value.equals("no") || value.equals("off")) {
+            return false;
+        }
+        return false;   // unrecognised: closed
     }
 
     /** Sets a key and rewrites the file, keeping every other key intact. */

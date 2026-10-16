@@ -117,9 +117,7 @@ public final class ScreenMineClient implements ClientModInitializer {
 
         CodecProbe.loadSetting();
 
-        LOG.info("ScreenMine ready — {}", Cfg.serverConfigured()
-                ? "companion server " + Cfg.SERVER_HOST + ":" + Cfg.SERVER_PORT
-                : "no companion server configured, running standalone");
+        LOG.info("ScreenMine ready — network {}", Cfg.networkStatus());
     }
 
     /**

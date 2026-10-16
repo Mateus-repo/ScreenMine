@@ -13,13 +13,47 @@ public final class Cfg {
     private Cfg() {
     }
 
+    /**
+     * Whether the network layer may be used at all.
+     *
+     * <p>Off by default, and deliberately separate from having an address. An
+     * address left in a config file from an earlier session should not be
+     * enough to start opening sockets: the player has to ask for it again, every
+     * time. This is the local build, whose whole job is to work in single player
+     * on any server, and a remote control surface it does not need is an attack
+     * surface it should not carry.
+     */
+    public static final boolean NETWORK_ENABLED = Settings.getBool("network.enabled", false);
+
     /** ScreenMine companion server, from config/screenmine.properties. */
     public static final String SERVER_HOST = Settings.get("server.host", "");
     public static final int SERVER_PORT = Settings.getInt("server.port", 23481);
 
-    /** False when no server address is configured — the normal solo case. */
+    /**
+     * False unless the network is both switched on and pointed somewhere.
+     *
+     * <p>Both are needed. {@code network.enabled} is the player's decision; an
+     * empty host is the absence of one.
+     */
     public static boolean serverConfigured() {
-        return !SERVER_HOST.isBlank();
+        return NETWORK_ENABLED && !SERVER_HOST.isBlank();
+    }
+
+    /**
+     * Why the network is off, for the log.
+     *
+     * <p>"The network is inactive" is a claim that has to be checkable. A build
+     * that carries networking needs to be able to say so in one line at startup,
+     * because that line is the evidence.
+     */
+    public static String networkStatus() {
+        if (!NETWORK_ENABLED) {
+            return "off: network.enabled=false, so no socket is opened and packets are dropped";
+        }
+        if (SERVER_HOST.isBlank()) {
+            return "switched on but server.host is empty, so no socket is opened";
+        }
+        return "connecting to " + SERVER_HOST + ":" + SERVER_PORT;
     }
 
     /** Wire protocol version; must match the Python server. */

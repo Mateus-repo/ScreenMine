@@ -19,7 +19,7 @@ Antes de commitar, lê o `git diff` e verifica:
 ## Higiene
 - [ ] Sem `System.out.println`/prints de debug esquecidos
 - [ ] Sem código comentado em bloco
-- [ ] Sem segredos, caminhos locais (`C:\Users\...`) ou tokens
+- [ ] Sem segredos, caminhos locais (`C:\Users\<user>\...`) ou tokens
 - [ ] Sem ficheiros gerados no diff
 
 ## Mensagem

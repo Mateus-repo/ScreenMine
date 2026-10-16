@@ -3,7 +3,10 @@
 ## Projeto
 - **Mod:** ScreenMine (antes CoScreen)
 - **Port:** Minecraft 1.21.4 → 26.3 (Fabric, cliente-only)
-- **Referência (só leitura, NUNCA alterar):** `C:\Users\Strefiz\Documents\GitHub\CoScreen-main`
+- **Referência (só leitura, NUNCA alterar):** pasta irmã `../CoScreen-main`
+  (ou, se noutra máquina, um caminho que só exista em `AGENTS.local.md`, que o
+  git ignora). **Nunca escrevas um caminho absoluto com o nome de utilizador
+  num ficheiro versionado.**
 - **Repo de trabalho:** https://github.com/Mateus-repo/ScreenMine
 - **Objetivo:** browser Chromium embebido (MCEF Modern) desenhado como um ecrã
   plano no mundo — criar, mover, redimensionar, navegar e ver YouTube dentro do

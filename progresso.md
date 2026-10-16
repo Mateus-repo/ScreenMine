@@ -51,7 +51,10 @@ _Atualiza no fim de cada passo. Mantém curto e factual._
 ## Decisões tomadas
 - (2026-10-14) **Renomear CoScreen → ScreenMine por inteiro** — mod id, pacote
   `dev.screenmine`, namespace de assets, config, agente JS. O repo chama-se
-  ScreenMine e a licença é MIT (c) Mateus.
+  ScreenMine e a licença é **AGPL-3.0-only** (c) Mateus — obra derivada do
+  CoScreen, ver `NOTICE`. Uma linha mais abaixo (Licença, 2026-10-14) regista
+  que o MIT aqui foi um erro e porque é que a AGPL-5(a) obriga a obra derivada
+  inteira à mesma licença.
 - (2026-10-14) **ScreenMine é só 26.3.** O CoScreen 1.21.4 fica intacto como
   referência. Suportar as duas versões no mesmo código é inviável: a 26.3 removeu
   Yarn, GLFW e o `RenderSystem` antigo.
@@ -384,7 +387,7 @@ Isto veio do spike de render. **CORRIGIDO 2026-10-15:** o spike nao renderizou n
 ## Como testar
 
 ```
-cd C:\Users\Strefiz\Documents\GitHub\ScreenMine
+cd <repo>          # a raiz do ScreenMine
 .\gradlew.bat runClient
 ```
 

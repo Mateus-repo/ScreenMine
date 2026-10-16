@@ -420,6 +420,13 @@ public final class ScreenMineClient implements ClientModInitializer {
     public boolean onWorldKey(int action, KeyEvent event) {
         BrowserInstance b = controlledBrowser();
         boolean typing = b != null && b.raw() != null && b.isEditing();
+        // Logged because "nothing types in the world" has two causes that look
+        // identical from the inside: the event never reached us, or it reached
+        // us and we refused it because the page did not say it was editing. The
+        // answer is which of these two lines appears.
+        LOG.info("WORLD key {} mods={} action={} browser={} editing={}",
+                keyName(event), event.modifiers(), action,
+                b == null ? "none" : "yes", typing);
 
         // The control-mode toggle is handled here rather than through
         // KeyMapping.consumeClick(). Vanilla dispatch can silently never reach us
@@ -445,10 +452,13 @@ public final class ScreenMineClient implements ClientModInitializer {
             return true;   // never let Esc reach the game menu from control mode
         }
         if (!b.isEditing()) {
-            return false;  // nothing focused on the page — let the game have the key
+            // The page does not claim a text field, so this key belongs to the
+            // game. That is what keeps WASD walking the player around, and it
+            // is also why nothing types in the world until the page reports
+            // editing - which is the whole bug A.
+            return false;
         }
         lastModifiers = event.modifiers();
-        // Alt+arrow is browser history, which no page script can do.
         if (b.handleShortcut(event)) {
             return true;
         }
@@ -471,6 +481,15 @@ public final class ScreenMineClient implements ClientModInitializer {
 
     /** Stands for "this binding sits on nothing", which never equals a real key code. */
     private static final int UNKNOWN_KEY = -1;
+
+    /** Readable name for a key, so the log says BACKSPACE instead of 271. */
+    private static String keyName(KeyEvent event) {
+        try {
+            return InputConstants.getKey(event).getName();
+        } catch (RuntimeException ex) {
+            return "raw-" + event.key();
+        }
+    }
 
     /** The physical key a binding currently sits on, or {@link #UNKNOWN_KEY}. */
     private static int boundKeyCode(KeyMapping binding) {

@@ -118,6 +118,7 @@ public final class Lang {
         // menu
         put("menu.title", "ScreenMine", "ScreenMine");
         put("menu.spawn", "Spawn a screen", "Заспавнить экран");
+        put("menu.testpage", "Spawn the keyboard test page", "Заспавнить страницу теста клавиатуры");
         put("menu.screens.none", "— no screens placed —", "— экранов нет —");
         put("menu.screens.aimed", "  ← aimed", "  ← наведён");
         put("menu.screens.page", "%d/%d", "%d/%d");

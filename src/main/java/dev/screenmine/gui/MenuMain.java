@@ -93,6 +93,15 @@ public final class MenuMain extends Screen {
         });
         y += H + GAP;
 
+        // A button, not just the address screenmine:test, because the whole
+        // point of that page is to diagnose a keyboard that does not work.
+        // Typing its name would need the thing being tested.
+        add(x, y, Lang.t("menu.testpage"), b -> {
+            mod.spawnScreen(dev.screenmine.browser.TestPage.URL);
+            onClose();
+        });
+        y += H + GAP;
+
         if (mine.isEmpty()) {
             Button none = add(x, y, Lang.t("menu.screens.none"), b -> { });
             none.active = false;

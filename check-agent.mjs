@@ -32,11 +32,28 @@ if (!line) {
   process.exit(1);
 }
 const at = line.indexOf("= Utf8");
-let js = line.slice(at + "= Utf8".length).trim();
-// O javap escapa no dump: \' -> ' e \\ -> \. Desfazemos por ordem, o
-// contrario do que fez.
-js = js.replace(/\\(['"])/g, "$1");
-js = js.replace(/\\\\/g, "\\");
+// O javap escapa o dump: newline real sai como \n, tab como \t, aspa como \'
+// e barra como \\. Percorremos de uma vez porque replaces encadeados partem
+// mal o caso "\\n" - barra literal seguida de n, e nao uma newline.
+function unescapeJavap(s) {
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] !== "\\") {
+      out += s[i];
+      continue;
+    }
+    const c = s[++i];
+    if (c === "n") out += "\n";
+    else if (c === "t") out += "\t";
+    else if (c === "r") out += "\r";
+    else if (c === "'") out += "'";
+    else if (c === '"') out += '"';
+    else if (c === "\\") out += "\\";
+    else out += "\\" + c;
+  }
+  return out;
+}
+let js = unescapeJavap(line.slice(at + "= Utf8".length).trim());
 
 const dir = mkdtempSync(join(tmpdir(), "sm-agent-"));
 const file = join(dir, "agent.js");

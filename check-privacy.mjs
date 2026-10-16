@@ -7,6 +7,16 @@ import { readFileSync } from "node:fs";
 const files = execFileSync("git", ["ls-files"], { encoding: "utf8" })
   .split("\n").filter(Boolean);
 
+// Ficheiros que contem os padroes como fixture e nao como fuga. Nao e um
+// buraco silencioso: sao listados no fim, para se ver o que foi ignorado.
+const SKIP = new Set([
+  "check-privacy.mjs",       // este ficheiro tem os padroes dentro das regex
+  "docs/teste-plugin.mjs",   // usa um caminho falso como caso de teste
+  ".opencode/lib/guard.js",  // lista os padroes que procura
+]);
+const skipped = files.filter((f) => SKIP.has(f));
+const scanned = files.filter((f) => !SKIP.has(f));
+
 const CHECKS = [
   ["hostname do servidor", /strefizstreamsrv/i],
   ["caminho da sandbox", /\/home\/claude\b/],
@@ -20,7 +30,7 @@ const CHECKS = [
 let bad = 0;
 for (const [name, re] of CHECKS) {
   const hits = [];
-  for (const f of files) {
+  for (const f of scanned) {
     let text;
     try {
       text = readFileSync(f, "utf8");
@@ -46,5 +56,6 @@ for (const [name, re] of CHECKS) {
   }
 }
 
-console.log(`\n${files.length} ficheiros verificados, ${bad} categoria(s) com achados`);
+console.log(`\n${scanned.length} ficheiros verificados, ${bad} categoria(s) com achados`);
+console.log(`ignorados de proposito (têm os padrões como fixture): ${skipped.join(", ")}`);
 process.exit(bad ? 1 : 0);

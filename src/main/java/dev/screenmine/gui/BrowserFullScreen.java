@@ -247,7 +247,10 @@ public final class BrowserFullScreen extends Screen {
             return super.keyPressed(event);
         }
         LOG.info("IN keyPressed {} mods={}", keyName(event), event.modifiers());
-        // Alt+Left / Alt+Right are browser history, which no page script can do.
+        // Ctrl and Alt combos go through the public CEF API. The page shim
+        // already tries these, but a raw keydown triggers no default editing
+        // action by design, so the script's preventDefault has nothing to
+        // prevent. Handling it here sends the command through the browser.
         if (screen.browser.handleShortcut(event)) {
             return true;
         }

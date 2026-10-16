@@ -48,6 +48,13 @@ public final class UrlEntry extends Screen {
             onClose();
             return;
         }
+        // The mod's own test page is a marker, not an address. It has to reach
+        // navigate() untouched, otherwise the https:// prefix below turns it
+        // into a search for the words "screenmine test".
+        if (url.startsWith("screenmine:")) {
+            onAccept.accept(url);
+            return;
+        }
         if (!url.contains("://")) {
             url = url.contains(".") && !url.contains(" ")
                     ? "https://" + url

@@ -761,10 +761,15 @@ private volatile boolean closed;
             return;
         }
         applyingRemote = remote;
-        currentUrl = url;
+        // The built-in test page is a marker, not a real address. It becomes a
+        // data URL so there is no file to write and nothing to clean up. It
+        // still goes through the normal load path, so the agent, the handlers
+        // and the texture all behave exactly as they do for any other page.
+        String target = TestPage.URL.equalsIgnoreCase(url) ? TestPage.dataUrl() : url;
+        currentUrl = target;
         playbackTime = -1;
         appliedGain = -1.0;
-        cef.loadURL(url);
+        cef.loadURL(target);
         applyingRemote = false;
     }
 
@@ -834,16 +839,83 @@ private volatile boolean closed;
         if (event.hasAltDown() && !event.hasControlDown() && !event.hasShiftDown()) {
             if (event.key() == InputConstants.KEY_LEFT) {
                 goBack();
+                LOGGER.info("SHORTCUT alt+left -> goBack");
                 return true;
             }
             if (event.key() == InputConstants.KEY_RIGHT) {
                 if (cef.canGoForward()) {
                     cef.goForward();
+                    LOGGER.info("SHORTCUT alt+right -> goForward");
+                } else {
+                    LOGGER.info("SHORTCUT alt+right ignored, no forward history");
                 }
                 return true;
             }
         }
+
+        // Ctrl combos through the public CefFrame API, verified with javap.
+        // The page shim already tries these with execCommand, but JCEF's
+        // offscreen path delivers KEY_PRESSED as a raw keydown, which by
+        // design triggers no default editing action - so the shim's
+        // preventDefault has nothing to prevent and the browser never acts.
+        // Doing it here means the command goes through the browser instead of
+        // through a script in a frame that may not be the one holding focus.
+        if (event.hasControlDown() && !event.hasAltDown()) {
+            CefFrame frame = cef.getFocusedFrame();
+            if (frame == null) {
+                frame = cef.getMainFrame();
+            }
+            if (frame == null) {
+                return false;
+            }
+            String action = ctrlAction(event);
+            if (action == null) {
+                return false;
+            }
+            switch (action) {
+                case "selectAll" -> frame.selectAll();
+                case "copy" -> frame.copy();
+                case "cut" -> frame.cut();
+                case "paste" -> frame.paste();
+                case "undo" -> frame.undo();
+                case "redo" -> frame.redo();
+                default -> {
+                    return false;
+                }
+            }
+            LOGGER.info("SHORTCUT ctrl -> {}", action);
+            return true;
+        }
         return false;
+    }
+
+    /**
+     * Which CefFrame editing command a Ctrl combo means, or null.
+     *
+     * <p>Shift matters for exactly one of them: Ctrl+Z is undo and Ctrl+Shift+Z
+     * is redo, as on every browser. Reading the key alone would make both undo.
+     */
+    private static String ctrlAction(KeyEvent event) {
+        int key = event.key();
+        if (key == InputConstants.KEY_A) {
+            return "selectAll";
+        }
+        if (key == InputConstants.KEY_C) {
+            return "copy";
+        }
+        if (key == InputConstants.KEY_X) {
+            return "cut";
+        }
+        if (key == InputConstants.KEY_V) {
+            return "paste";
+        }
+        if (key == InputConstants.KEY_Z) {
+            return event.hasShiftDown() ? "redo" : "undo";
+        }
+        if (key == InputConstants.KEY_Y) {
+            return "redo";
+        }
+        return null;
     }
 
     public void goBack() {

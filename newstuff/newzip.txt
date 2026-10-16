@@ -1,0 +1,66 @@
+Estes links são todos sobre H.264 e ffmpeg, que é o problema do Bug C no codecs.md: o Chromium do mod não descodifica H.264 nem AAC. Dá para usar de três maneiras.
+
+1. Estudar como os outros mods tocam H.264. O NGoedix/VideoPlayer, o watervision e o mp4-player tocam vídeo em Minecraft sem Chromium. Presumo que descodifiquem com ffmpeg ou VLC nativo e desenhem numa textura, mas ainda não verifiquei. Se eu clonar os repos (o GitHub está acessível daqui), consigo ver:
+
+como ligam a descodificação à textura;
+que licença têm, e se é compatível com a AGPL do ScreenMine;
+quanto trabalho dá a opção (d) do codecs.md (descodificar fora do Chromium).
+
+Daí sairia uma análise de viabilidade e custo, e uma secção para o progresso.md.
+
+2. Usar o ffmpeg do gyan.dev para converter ficheiros de teste. Isto é útil já, sem servidor. Se o vídeo já for AV1 (o teu caso do Jellyfin), só o áudio precisa de conversão:
+
+powershell
+# Vídeo AV1 já compatível: copia o vídeo e converte só o áudio para Opus
+ffmpeg -i entrada.mp4 -c:v copy -c:a libopus -b:a 128k saida.webm
+
+# Vídeo H.264: re-codifica para VP9 + Opus (mais lento)
+ffmpeg -i entrada.mp4 -c:v libvpx-vp9 -crf 32 -b:v 0 -c:a libopus -b:a 128k saida.webm
+
+Serve o saida.webm por HTTP local (por exemplo python -m http.server) e abre-o no ecrã do mod. Se tocar, a sonda alargada e o transcode do servidor ficam validados, e se não tocar, o video.error.code diz porquê. O file: está na lista de coisas a bloquear no security-hardening, por isso usa HTTP.
+
+3. O pack de codecs x264 do free-codecs. Não vai ajudar. É um pack para o Windows, e o Chromium traz o ffmpeg dele, por isso não usa codecs instalados no sistema. É uma inferência minha e não está testada.
+
+O curseforge (mp4-player) só serve como referência para ver o comportamento, e o ffmpeg.org é só a página de download.
+
+Queres que comece pela análise dos repos (1), ou pelos comandos e o teste local (2)?
+
+atualiza o que fizeste antes primeiro e da ,é o zip
+
+Vou analisar os dois repos de vídeo para Minecraft, para o kit ficar com factos e não palpites; depois atualizo as skills e refaço o zip.
+
+Investigating shared dependencies and licensing across both mods.
+Researching WaterMedia's current media backend and format support.
+Checking whether FFmpeg's licensing supports H.264 decoding.
+Checking version compatibility details for the WaterMedia mod.
+Updating research skills and refreshing the project archive.
+Revisando a redação de um alerta sobre o mod.
+Checking version strings for false positive matches.
+
+Apanhei um falso positivo na minha própria guarda: números de versão como 3.0.0.24 parecem um IP e bloqueariam o commit. Corrijo e volto a testar.
+
+Atualizei o kit com os teus links e refiz o zip (screenmine-kit.zip). Clonei os 3 repos e li a documentação e as licenças; não corri nada em jogo.
+
+O que encontrei
+VideoPlayer e WaterVision não servem para reutilizar código. O VideoPlayer é “All rights reserved” e o WaterVision é PolyForm Strict. Os dois são só uma camada fina por cima do WaterMedia, que é onde está o que interessa.
+O WaterMedia 3.0.0.24 (BETA) usa ffmpeg 8.1.2, em LGPL e sem x264/x265, com motores GL, Vulkan e OpenAL. Tem resolvers para Medal, TikTok e Twitch, e suporta Windows x86_64. Pelo que sei de ffmpeg, o descodificador H.264/AAC vem incluído sem x264. Isto é inferência minha e só uma corrida com um .mp4 H.264+AAC a prova.
+O WaterMedia não está publicado para a 26.3. A lista vai até 26.1.2 e 26.2, por isso não sei se carrega na tua versão. Também não sei se a 26.3 usa Vulkan ou OpenGL por omissão, o que decide o motor a usar.
+Licença do WaterMedia (DPS não-comercial): o ScreenMine só o pode usar como dependência externa instalada pelo utilizador, nunca embebido no jar, e só se for não-comercial. Se alguma vez copiares código dele, para: não é compatível com AGPL.
+Risco de “não-concorrência” (§4.3): a licença proíbe produtos que concorram com os do autor que usam o WaterMedia, e o WaterFrames (ecrãs com media no mundo) é dele. Não sei como isto seria decidido, não sou advogado, e convém perguntar ao autor antes de publicar.
+O pack x264 do free-codecs não ajuda: o Chromium traz o ffmpeg dele, e um pack de codecs do sistema não o altera (inferência minha).
+O que mudou no zip
+Skill nova external-decoder-research: tabela dos projetos e licenças, factos verificados, hipóteses por provar e um esboço de desenho híbrido (Chromium para páginas, WaterMedia só para vídeo que o Chromium recusa). A ordem de trabalho recomendada é:
+Transcodificar no servidor.
+Converter ficheiros locais com ffmpeg.
+Fazer um spike mínimo com um .mp4 H.264 numa textura.
+Só depois decidir a integração completa, e só depois de falar com o autor.
+codec-probe com teste local: comandos de ffmpeg e ffprobe prontos para converter para .webm e servir por HTTP local (não por file:). Se o .webm tocar, o transcode fica validado, e se não tocar, o video.error.code da sonda diz porquê.
+AGENTS.md: nova regra de licenças de terceiros (nunca copiar código de projetos fechados ou não-AGPL) e as skills novas nas tabelas.
+security-hardening: novo risco para binários descarregados em runtime, como o yt-dlp.
+Falso positivo corrigido na guarda de privacidade: versões como 3.0.0.24 eram tratadas como IP e bloqueavam o commit. Voltei a testar os 11 casos num repo limpo e o próprio kit passa sem achados.
+
+O kit tem agora 10 skills novas, 5 atualizadas e o plugin e hook com guarda. Os passos de instalação estão no LEIA-ME.md.
+
+Por onde queres começar: pelo teste local com ffmpeg (já dá para fazer hoje) ou pelo spike mínimo com o WaterMedia, que me obriga a escrever código Java sem o poder compilar aqui?
+
+Ficheiros no zip: screenmine-kit.zip

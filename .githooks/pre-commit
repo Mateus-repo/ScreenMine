@@ -1,0 +1,20 @@
+#!/bin/sh
+# Guarda de privacidade antes do commit. Bloqueia e explica; nao toca em nada.
+# Activar uma vez por clone:  git config core.hooksPath .githooks
+#
+# Se o node nao existir, NAO bloqueia: avisa e deixa passar. Um hook que barra
+# todos os commits por falta de uma ferramenta e pior do que nenhum hook.
+
+GUARD="$(git rev-parse --show-toplevel)/.opencode/lib/guard-cli.js"
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "[guard] node nao encontrado - guarda de privacidade ignorada." >&2
+  exit 0
+fi
+
+if [ ! -f "$GUARD" ]; then
+  echo "[guard] $GUARD em falta - guarda de privacidade ignorada." >&2
+  exit 0
+fi
+
+exec node "$GUARD"

@@ -1,5 +1,10 @@
 # Revisão completa — ScreenMine · 5 passagens
 
+> **Actualizado 2026-10-16.** Sete achados já corrigidos, um deles por mim
+> (o loop de re-injecção, que a revisão não previu). Tabela de estado no fim.
+> O texto original está tal como foi escrito, para se ver o raciocínio antes das
+> correcções.
+
 **Âmbito.** Todo o código em `src/main/java/dev/screenmine` na branch `spike/codecs`
 (HEAD `1ece4e3`), ~3.800 linhas. Feita antes da próxima corrida, para não gastar
 outra sessão a descobrir o que se via ler.
@@ -618,3 +623,57 @@ Select-String "agent report|onTitleChange|SMX\||ScreenMine/codecs" run\logs\late
 - `location.href` = a página real **e** o `SM|` chega, com `media=1` e
   `vvolume=0.00` quando se manda zero → o volume funciona e há outra causa no
   `N`; o `vvolume` diz qual.
+---
+
+# Estado dos achados (2026-10-16)
+
+| # | Achado | Gravidade | Estado | Commit |
+|---|---|---|---|---|
+| **A1** | Agente pára de reportar quando a página usa o título | crítico | **corrigido** | `376d7d4` |
+| **A2** | Agente só no frame principal | crítico | **corrigido — e foi ele que resolveu o `N`** | `1e3a570` |
+| **A3** | `applyingRemote` sem `volatile` | alto | corrigido (e documentado: nunca protegeu nada) | `61605c1` |
+| **A4** | Campos de ciclo de vida sem `volatile` | alto | corrigido | `61605c1` |
+| **A5** | Textura órfã no detach+attach | alto | corrigido | `e514c82` |
+| **A6** | `net.send` deita o pacote fora em CONNECTING | alto | corrigido | `7cc1401` |
+| **B1** | Foco não largado ao abrir menus | médio | corrigido | `2590561` |
+| **B2** | Overlay ignora `SCROLL_SPEED` | médio | corrigido | `2590561` |
+| **B3** | Menus não reagem a pacotes | médio | **aberto** | — |
+| **B4** | Writer thread por tentativa | baixo | anotado, não corrigido | — |
+| **B5** | `outbound.clear()` perde trabalho | baixo | anotado | — |
+| **B6** | `inbound` sem limite | baixo | teórico, anotado | — |
+| **B7** | `all()` devolve vista viva | baixo | auditado: nenhum caller muta | — |
+| **B8** | `close()` com overlay aberto | — | auditado: safe | — |
+| **B9** | `LIVE` cresce se `close()` não correr | baixo | anotado | — |
+| **B10** | `handlersInstalled` nunca reposto | médio | **parcial** — agora loga-se o caso `client == null` | `376d7d4` |
+| **C1** | `createBrowser` sem `try/catch` | médio | corrigido | `376d7d4` |
+| **C2** | `Lang.t` pode crashar | médio | corrigido (+ auditoria: 105 chaves, 0 mismatches) | `2590561` |
+| **C3** | Override morto em `MenuJoinChoice` | baixo | corrigido | `2590561` |
+| **C4** | Comentários obsoletos no `CodecProbe` | baixo | corrigido | `2590561` |
+| **C5** | Javadoc órfão empilhado | baixo | corrigido | `2590561` |
+| **C6** | `spike/` morto com a câmara 2× | baixo | **aberto** — não apagado para não perder o registo do spike | — |
+| **D1–D6** | Desempenho e fugas | — | anotados; D4 (`GAIN` em log) sai antes da release | — |
+| **E1** | Diagnóstico ausente | crítico | **feito** — `href` + `top` no relatório | `376d7d4` |
+| **E2** | Ordem das correcções | — | 1–8 executados | vários |
+| **E4** | UX (dimensão, scroll de listas, foco perdido) | — | **aberto** | — |
+| **E5** | Segurança | — | auth e allowlist **abertos**; URL removida dos ficheiros | — |
+
+## O que a revisão não previu
+
+O **loop de re-injecção** do watcher de frames. Introduzi-o em `1e3a570` para
+resolver A2, e a corrida 7 mostrou-o: 23 re-injecções seguidas, 64 linhas de
+ganho para um ecrã. `knownFrames` só era posto quando havia subframes, portanto
+numa página sem iframes ficava em `0` enquanto se comparava com
+`getFrameCount()` (=1). Corrigido em `5ced97f`.
+
+Vale a pena registar porque é o padrão da review inteira: **cada correcção de um
+bug cria a hipótese de outro, e nenhum build verde os apanha.**
+
+## O que a revisão acertou e que só o log confirmou
+
+**A1** — o agente só reescrevia o título quando o *seu* payload mudava. Com o
+YouTube a escrever o título, o canal `SM|` morria, `isEditing()` ficava sempre
+`false`, e as teclas de edição nunca chegavam ao browser. **Ainda não está
+resolvido** (zero recibos `SM|` na corrida 7), mas o diagnóstico que a revisão
+propôs — contar *todos* os `onTitleChange`, não só os reconhecidos — é
+exactamente o que está no `5ced97f` e é o que vai dizer qual das duas
+hipóteses é.

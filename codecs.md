@@ -17,7 +17,7 @@ Porque é que o vídeo toca no YouTube e não noutros sítios?
 | youtube.com | ✅ reproduz |
 | medal.tv | ❌ `Playback failed because the media is not supported by this client` |
 | tiktok.com | ❌ idem |
-| `https://strefizstreamsrv.ddns.net/web/#/home` | ❌ idem |
+| `<my-server>` | ❌ idem |
 
 A hipótese inicial foi "o Chromium do JCEF não traz codecs proprietários". **Esta
 hipótese foi investigada e ficou mais fraca, não mais forte** (§3) — e depois
@@ -74,6 +74,37 @@ que deles, ninguém precisa de gastar 200 GB para descobrir.
 
 Consequência prática: nenhum caminho dentro do mod arranja isto. Ver §3e para os
 custos.
+
+### Actualização 2026-10-16 — o teu servidor tem caminho
+
+A conclusão acima mantém-se para o TikTok/Twitch/MedalTV, mas **o servidor do
+utilizador é um caso diferente**, porque o cliente é que escolhe o codec de
+destino da transcodificação.
+
+O ficheiro de teste é **AV1 + AAC**. O mod toca AV1 e não toca AAC. Logo, nesse
+ficheiro, **só o áudio precisa de ser transcodificado** — o vídeo faz
+direct-play. Isto é muito mais barato do que transcode de vídeo, mesmo sem
+aceleração de hardware.
+
+Jellyfin 10.11.3, Windows, `jellyfin-ffmpeg` com `libsvtav1`, `libopus` e
+`libvpx-vp9`: os encoders existem. Falta activar "Allow encoding in AV1 format" e
+pôr o codec preferido a **AV1** em vez de *Auto*.
+
+Passos exactos e o que ainda falta confirmar em `progresso.md`, secção **C-bis**.
+
+### O que ainda falta para decidir o caso do Jellyfin
+
+A sonda actual mede codecs isolados. Faltam as combinações que interessam:
+
+```
+video/mp4; codecs="av01.0.05M.08,mp4a.40.2"   ← o ficheiro do utilizador
+video/webm; codecs="av01.0.05M.08,opus"       ← o alvo de transcodificacao
+video/webm; codecs="vp9,opus"
+audio/mpeg · audio/flac
+```
+
+E sobretudo o `video.error.code` quando um vídeo falha, que diz *porquê* em vez
+de apenas que não toca. É o próximo passo natural.
 
 ---
 
@@ -382,7 +413,7 @@ problema é outro (certificado, sessão/login, autoplay).
 public abstract void executeJavaScript(java.lang.String, java.lang.String, int);
 ```
 
-Logo não há forma de ler o valor de retorno. A sonda、借 o canal que o agente de
+Logo nao ha forma de ler o valor de retorno. A sonda perdeu a corrida com o agente de
 página já usa para o estado de playback, com um prefixo novo `SMX|`. O agente
 continua a reescrever o título a cada 250 ms, por isso a sonda corre **uma vez
 por browser** (o suporte a codecs é do build do Chromium, não da página).

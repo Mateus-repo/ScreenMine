@@ -1,4 +1,4 @@
-﻿# progresso.md — ScreenMine · 1.21.4 → 26.3
+# progresso.md — ScreenMine · 1.21.4 → 26.3
 
 _Atualiza no fim de cada passo. Mantém curto e factual._
 
@@ -300,7 +300,7 @@ Para cirugias delicadas, correr com `OPENCODE_AUTOCOMMIT=0`.
 - Tags de segurança: `backup/main-pre` (fa7f977), `backup/port-pre` (4104f22),
   `backup/spike-input-pre` (a920133).
 
-### Conflitos预期idos ao bringscodigo da spike
+### Conflitos esperados ao trazer o codigo da spike
 - **Nao** trazer `lang/*.json` da spike: ela mudou para
   `key.category.screenmine.main` (uma `KeyMapping.Category` object), mas o
   `ScreenMineClient` por migrar ainda regista keybinds com categoria por
@@ -418,7 +418,7 @@ Checklist completa em baixo.
 
 **Conteudo**
 - [ ] YouTube real: `?v=` carrega, play/pause, seek, volume
-- [ ] **Bug C:** `https://strefizstreamsrv.ddns.net/web/#/home` reproduz video
+- [ ] **Bug C:** `<my-server>` reproduz video
 - [ ] **Bug C:** TikTok / MedalTV reproduzem video
 - [ ] **Bug C:** a sonda de codecs faz log em `latest.log`
       (`debug.codecs=1`, logger `ScreenMine/codecs`)
@@ -456,6 +456,47 @@ ate ao momento o build verde escondia tres bugs de render.
 | 4o teste (12:41-12:43) | sem `ONLOADEND` no log | **agente nunca injectado** -> causa raiz do N e do shim de edicao (`codecs.md` §5b) |
 | 5o teste (12:47-12:50) | `AGENT injected by retry` — o agente **ja corre no mundo**; a sonda nao reportou | corrigiu o bug A; expoe que o meu canal (`document.title`) perdia a corrida |
 | 6o teste (12:55-12:56) | **tabela de codecs obtida**; `GAIN ... __smVol=0.000` confirmado | bug C **resolvido**; bug B instrumentado |
+| **7o teste — servidor multiplayer (23:40-23:49)** | **YouTube toca e o `N` MUTA** | bug B **resolvido, com prova no log**; bug A **continua aberto** |
+
+### Corrida 7 (23:40-23:49, servidor multiplayer, Modrinth) — a mais informativa
+
+Perfil `Fabric 26.2 (1)` do Modrinth App, ~120 mods (iris, bluemap, c2me,
+voicechat, journeymap, litematica, jei, malilib…), `mcef-modern
+0.3.3+mc26.3.jcef146.0.10` e `screenmine 1.0.0` instalados à mão.
+
+**Confirmado em jogo, com prova no log e não por impressão:**
+
+| O que | Prova |
+|---|---|
+| YouTube reproduz no mundo, num servidor | `agent report: media=2 … href=https://www.youtube.com/watch?v=j-RpvIuazmc` |
+| **O `N` muta mesmo** | `23:48:30 agent report: vol=0, media=2, vvolume=0.00` — a Java mandou 0 e o `<video>` real ficou a `0.00` |
+| Os mixins instalam sem partir o arranque | o cliente arrancou com `SpongePowered MIXIN Subsystem Version=0.8.7` e sem erro de mixin |
+| O agente entra em **iframes** | `agent report: … top=iframe href=https://accounts.google.com/ServiceLogin…` — só é possível depois de `1e3a570` |
+
+Isto **encerra o bug B** (tecla `N`) e mostra que o A2 (agente em todos os
+frames) foi o que resolveu.
+
+**Continua aberto, e o log di-lo sem ambiguidade:**
+
+```
+SM| channel alive  →  NENHUM
+```
+
+**Zero recibos `SM|`**, mesmo depois da correcção do título (`376d7d4`). Logo
+`isEditing()` continua sempre `false`, e portanto **os mixins do mundo não
+encaminham as teclas** — por muito bem instalados que estejam. O bug A (teclas
+de edição) **não** está resolvido.
+
+**Bug meu, encontrado por esta corrida:** o watcher de frames re-injectou **23
+vezes seguidas** (`INJECT 26`, `GAIN 64` para um ecrã). `knownFrames` só era
+posto quando `extra > 0`, portanto sem subframes ficava em `0` enquanto se
+comparava com `getFrameCount()` (=1) — mudança, a cada 2 s, para sempre. Cada
+re-injecção fazia reset de `appliedGain`, daí as 64 linhas de ganho. Corrigido
+em `5ced97f`.
+
+**Ainda por testar em jogo:** o menu novo (`108c275`, lista de ecrãs), escrever
+num campo de texto, `Ctrl+*`, `Alt+seta`, a roda no mundo, e a queda de volume
+por distância.
 
 ### Corrida 2 (11:39) - detalhes
 - **Confirmado em jogo:** a aba de teclas mostra **"ScreenMine"** (a correcao dos
@@ -551,19 +592,15 @@ Select-String "IN keyPressed|IN charTyped" run\logs\latest.log | Select -Last 20
 `IN keyPressed` **sem** `IN charTyped` => hipotese confirmada. Os dois juntos =>
 o problema esta a jusante, no JCEF/CEF.
 
-### B) TECLA N (MUTAR) NAO FAZ NADA - PRIORIDADE 2
+### B) TECLA N (MUTAR) - **RESOLVIDO E PROVADO EM JOGO** 2026-10-16
 
-> **CAUSA RAIZ ENCONTRADA** (ver `codecs.md` §5b). Contexto confirmado pelo
-> utilizador: **ecra a tocar no mundo, sem overlay aberto.** E o sitio onde falha.
-> O log dessa corrida nao tem **nenhuma linha `ONLOADEND`** -> o agente de pagina
-> nunca foi injectado -> o `setInterval` que le `window.__smVol` nunca correu ->
-> `applyGain(0)` escrevia num sitio que ninguem lia. O chat dizia "sound off" e
-> nada acontecia, porque essa parte e Java.
-> Duas causas: (1) `createBrowser` chama `createImmediately()`, logo comeca a
-> carregar antes de `installHandlersOnce`; (2) `pumpAgent()` so era chamado pelo
-> overlay.
-> **CORRIGIDO em `spike/codecs`** (about:blank -> handlers -> loadURL, e
-> `pumpAgents()` no tick do mundo). **Por confirmar em jogo.**
+> **RESOLVIDO.** Na corrida 7 (servidor multiplayer) o `N` muta mesmo, e o log
+> prova-o: `23:48:30  agent report: vol=0, media=2, vvolume=0.00`. A Java mandou
+> zero e o `<video>` real ficou a `0.00`.
+>
+> **O que o resolveu foi o A2** (`1e3a570`, agente em todos os frames), não o
+> A1. O mesmo log mostra o agente dentro de `top=iframe` (Google accounts), o
+> que antes era impossível.
 
 **O que a corrida das 12:55 provou sobre este bug:**
 
@@ -587,6 +624,7 @@ antes de o YouTube ter criado o player — por isso `vvolume=-` e nao diz nada.
 **Instrumentacao nova:** o auto-relatorio passou a sair **a cada mudanca** do numero
 de elementos ou de `__smVol` (em vez de uma vez), para a transicao interesante
 `0 -> 1` nao poder escapar. Passa a mostrar `vvolume` com o video existente.
+Foi esta instrumentacao que resolveu o caso na corrida 7.
 
 ### C) VIDEO EM OUTROS SITES - PRIORIDADE 2 - **CAUSA CONFIRMADA**
 
@@ -670,6 +708,128 @@ resolver o video e aparecer outro sintoma: (ii) certificado/HTTPS (certificado
 invalido, ddns), (iii) cookies / sessao / login persistente entre sessoes do jogo,
 (iv) autoplay, (v) controlo por teclado/rato.
 
+### C-bis) O TEU SERVIDOR (Jellyfin) — há caminho, e é mais barato do que eu disse
+
+**O que estava errado no que eu assumi.** Escrevi que "o teu servidor serve
+H.264/AAC". Os teus dados mostram que **o ficheiro de teste é AV1 + AAC**, não
+H.264. O Chromium do mod **toca AV1** (`av01.0.05M.08 = probably`); o que falha
+é **só o AAC**. Neste ficheiro **não é preciso transcodificar o vídeo** — só o
+áudio. Isso muda o custo de "pesado" para "barato".
+
+**O teu servidor:**
+
+| | |
+|---|---|
+| Versão | Jellyfin **10.11.3** (server / web / build) |
+| Sistema | Windows, `C:\Program Files\Jellyfin\Server` |
+| Aceleração | **None** (só software) |
+| Codificação AV1 | **desligada** |
+| Codificação HEVC | **desligada** (não faz falta — o mod não toca HEVC) |
+| `jellyfin-ffmpeg` | tem **`libsvtav1`**, **`libopus`**, **`libvpx-vp9`** |
+| Encoders de hardware | listados, mas só servem com a GPU certa |
+
+**O que fazer, uma coisa de cada vez:**
+
+1. **Dashboard → Reprodução → Transcodificação → ativa "Allow encoding in AV1
+   format".** É para os ficheiros H.264. Deixa o HEVC desligado.
+2. **No Jellyfin dentro do mod → Definições → Reprodução → Vídeo avançado →
+   "Preferred transcode video codec"**: põe **AV1**, não *Auto*. O *Auto*
+   pode estar a escolher AAC.
+3. **Áudio**: escolhe **Opus** se aparecer na lista.
+4. Testa **primeiro com o ficheiro MedalTV** — o vídeo já é AV1, por isso só o
+   áudio é transcodificado.
+
+**Limite:** AV1 por software em tempo real é pesado. Encoders AV1 por hardware
+existem em NVIDIA RTX 40+, Intel Arc e AMD RX 7000; anteriores não têm.
+
+**Ainda por confirmar:** o log do servidor **não tem nenhuma linha de
+transcodificação** — avaliou o pedido (`EnableVideoPlaybackTranscoding: True`,
+ligação remota, limite 50 Mbps) e a reprodução parou aos 0 ms. Parece que não
+encontrou caminho compatível com o que o cliente declarou, mas isso é inferência
+a partir de um excerto curto. Para fechar: log em **Debug** e repetir.
+
+**TikTok, Twitch e MedalTV: continua sem solução.** Não há servidor que
+controles, logo não há transcodificação possível. Só uma build própria do JCEF.
+
+**Alerta de segurança — o token.** O log do Jellyfin que partilhaste tem o teu
+IP público, nome de utilizador e um **token de sessão**. Não o publiques. **Faz
+logout e login de novo** para o invalidar. Viste também um `PublicUser`: se for
+uma conta partilhada, confirma que não tem permissões de administrador.
+
 **DRM (Netflix, Disney+) nao vai funcionar por esta via.**
+
+---
+
+## Segurança e privacidade (revisitado 2026-10-16)
+
+### O teu servidor estava no repo público
+
+**Verificado, não suposto:**
+
+```
+codecs.md:20      https://<my-server>   (já removido)
+progresso.md:421  https://<my-server>   (já removido)
+```
+
+Estava em **três commits** (`13af2e5`, `1e74d36`, `1ece4e3`) num repositório
+público. Um hostname `ddns.net` publicado resolve-se para o IP de casa. **Já
+está exposto** — removê-lo dos ficheiros actuais não o desexpoe.
+
+- **Feito:** substituído por `<my-server>` em `codecs.md` e `progresso.md`.
+- **Por decidir (precisa da tua autorização):** reescrever o histórico com
+  `git filter-repo` para o tirar dos commits. É destrutivo e reescreve hashes;
+  não o faço sem o teu OK explícito.
+
+### `run/` — verificado limpo
+
+```
+$ git check-ignore -v run/logs/latest.log
+.gitignore:4:run/   run/logs/latest.log
+$ git ls-files | grep '^run/'      → vazio
+```
+
+`run/` já está no `.gitignore` e não há um único ficheiro de `run/` versionado.
+Sem logs, sem cookies do browser, sem sessões. **Esta preocupação não se
+confirmou.**
+
+### Dívida de segurança que ainda existe
+
+| Risco | Gravidade | Nota |
+|---|---|---|
+| **Protocolo sem autenticação** | **alta** para publicação | `hello` leva só `name` + `ver`. Qualquer um que alcance a porta 23481 pode injectar `navigate` nos ecrãs de outros. Aceitável numa LAN; bloqueador para publicar. |
+| **Browser sem allowlist** | média | Um browser embebido abre o que lhe derem. Considerar lista de URLs permitidos nas definições. |
+| **`file://` não bloqueado** | média | Se o stream vier de outro jogador, o URL é remoto; ainda assim, bloquear `file:` é uma linha. |
+| **Cookies partilhados** | média (feature, mas também risco) | `createBrowser` usa `CefRequestContext.getGlobalContext()` — todos os ecrãs partilham cookies. Entrar no YouTube num ecrã entra em todos. É útil para "ver juntos" e é uma fuga de privacidade. |
+
+### Token do Jellyfin
+
+O log que partilhaste tem **token de sessão**. Faz logout/login para o
+invalidar. Não o publiques.
+
+---
+
+## O que falta para "funcionar tudo", por ordem
+
+| # | Item | Estado | Esforço |
+|---|---|---|---|
+| 1 | **Canal `SM|` vivo** | ❌ zero recibos, mesmo depois de `376d7d4` | diagnóstico primeiro: `5ced97f` conta todos os `onTitleChange` |
+| 2 | **Teclas de escrita no mundo** | ⛔ bloqueadas pelo #1 (`isEditing()` sempre `false`) | depende do #1 |
+| 3 | Menu de vários ecrãs | ✅ feito (`108c275`), **por testar** | — |
+| 4 | `Ctrl+*`, `Alt+seta` | ✅ feito (`9918753`), **por testar** | — |
+| 5 | Roda no mundo | ✅ mixins feitos (`8c11586`), **por testar** | — |
+| 6 | **Jellyfin** | caminho identificado, falta activar AV1 do lado do servidor | 4 passos |
+| 7 | TikTok / Twitch / MedalTV | ⛔ sem solução sem build própria do JCEF | dias + 200 GB |
+| 8 | Sonda alargada (áudio, contentores, `error.code`) | ❌ por fazer | pequeno |
+| 9 | README, CI, CHANGELOG, release alpha | ❌ por fazer | médio |
+| 10 | Auth do protocolo, allowlist, `file://` | ❌ por fazer | médio |
+
+**O item 8 é o próximo passo natural e é pequeno:** alargar a sonda com
+`audio/mpeg`, `audio/flac`, `video/mp4; codecs="av01.0.05M.08,mp4a.40.2"`,
+`video/webm; codecs="vp9,opus"` e `video/webm; codecs="av01.0.05M.08,opus"`, e
+**capturar `video.error.code`** quando um vídeo falha. O par AV1+AAC e o par
+VP9+Opus dizem exactamente se o alvo de transcodificação do Jellyfin vai
+resultar, e o `error.code` diz porque é que um vídeo não toca.
+
+---
 
 ## Registo de sessoes

@@ -6,6 +6,7 @@ import dev.screenmine.diag.CodecProbe;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.dimaskama.mcef.api.MCEFApi;
 import net.dimaskama.mcef.api.MCEFBrowser;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import org.cef.browser.CefBrowser;
 import org.cef.browser.CefFrame;
@@ -916,6 +917,77 @@ private volatile boolean closed;
             return "redo";
         }
         return null;
+    }
+
+    /**
+     * The character a control key stands for, or 0 when the key has none.
+     *
+     * <p>The values are the ASCII control codes, which is what a page editing
+     * command actually looks for: {@code \b} deletes backwards, {@code \r}
+     * submits, {@code \t} moves focus.
+     */
+    private static int controlCharacter(KeyEvent event) {
+        if (event.hasControlDown() || event.hasAltDown()) {
+            return 0;   // Ctrl+Backspace and friends are not plain editing
+        }
+        int key = event.key();
+        if (key == InputConstants.KEY_BACKSPACE) {
+            return 8;   // \b
+        }
+        if (key == InputConstants.KEY_RETURN) {
+            return 13;  // \r - not 10: 10 is the numpad enter, which is what
+        }              // mcef-modern's own table maps KEY_RETURN to
+        if (key == InputConstants.KEY_TAB) {
+            return 9;   // \t
+        }
+        if (key == InputConstants.KEY_DELETE) {
+            return 127; // DEL
+        }
+        return 0;
+    }
+
+    /**
+     * Delivers a control key as the character it stands for.
+     *
+     * <p>Why this exists. Everything that works today in the embedded browser
+     * goes through {@code charTyped}: letters, digits, punctuation. Backspace
+     * and Enter do not, and they do not work. The reason is visible in the
+     * platform change rather than in this mod. 1.21.4 had GLFW, whose text
+     * callback also reported the control characters; 26.3 uses SDL3, whose
+     * text input only ever carries printable characters. So a key like
+     * Backspace now reaches the game as a key event and never as a character,
+     * and on top of that mcef-modern's own SDL scancode table sends KEY_RETURN
+     * as AWT's VK_ENTER (10) instead of VK_RETURN (13), which is the numpad
+     * enter, not the one you press.
+     *
+     * <p>Sending the character explicitly routes these keys down the one path
+     * that is known to reach the page. It is a fallback, not a replacement: the
+     * raw key event is still sent too, so a key that does work keeps working.
+     *
+     * @return true when a character was sent for this key
+     */
+    public boolean sendControlCharacter(KeyEvent event) {
+        int codepoint = controlCharacter(event);
+        if (codepoint == 0) {
+            return false;
+        }
+        MCEFBrowser b = raw();
+        if (b == null) {
+            return false;
+        }
+        LOGGER.info("SYNTH CHAR key={} cp={} '{}'",
+                keyName(event), codepoint, new Character((char) codepoint).toString());
+        b.onCharTyped(new CharacterEvent(codepoint));
+        return true;
+    }
+
+    /** Readable name for a key, so the log says BACKSPACE instead of 42. */
+    private static String keyName(KeyEvent event) {
+        try {
+            return InputConstants.getKey(event).getName();
+        } catch (RuntimeException ex) {
+            return "raw-" + event.key();
+        }
     }
 
     public void goBack() {

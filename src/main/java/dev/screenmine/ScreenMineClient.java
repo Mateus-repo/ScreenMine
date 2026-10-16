@@ -465,6 +465,9 @@ public final class ScreenMineClient implements ClientModInitializer {
         if (action == InputConstants.RELEASE) {
             b.raw().onKeyReleased(event);
         } else {
+            // Same reason as the overlay: these four never reach the page as
+            // characters under SDL3, so one is sent alongside the key event.
+            b.sendControlCharacter(event);
             b.raw().onKeyPressed(event);
         }
         return true;

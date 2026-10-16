@@ -24,7 +24,7 @@ O port **corre em jogo num servidor multiplayer**. O que está provado com log:
 | Queda de volume por distância | ⬜ por testar | código existe, nunca medido |
 | Mixins instalam sem partir o arranque | ✅ | arranque limpo na corrida 7 |
 | Agente entra em iframes | ✅ | `agent report: … top=iframe` |
-| Teclado no overlay (`B`) | ⬜ por testar | shim + `Ctrl+*` + `Alt+seta` escritos, nunca testados |
+| Teclado no overlay (`B`) | ⚠️ parcial | letras OK; `Ctrl+*`/`Alt+seta` OK por API; `Backspace`/`Enter` falhavam → ver bug C |
 | Teclado no mundo | ⛔ **bloqueado** | ver bug A |
 | Roda no mundo | ⬜ por testar | mixins escritos, nunca testados |
 | Menu com lista de ecrãs | ⬜ por testar | `108c275` |
@@ -63,6 +63,38 @@ O canal é frágil por natureza: a página também escreve `document.title`
 reconhecidos. Uma corrida diz se o JCEF reporta sequer o título. Depois, a
 correcção é mover o payload para `console` (`onConsoleMessage`), que já está
 provado a funcionar para a sonda de codecs.
+
+### C) `Backspace`/`Enter` no overlay — causa encontrada, correção por provar
+
+**Sintoma:** no overlay (`B`), letras, clique, scroll, `Ctrl+A/C/V/Z/Y` e
+`Alt+seta` funcionam; `Backspace` e `Enter` não. Testado pelo utilizador.
+
+**Causa, verificada nos jars e não deduzida:**
+
+1. `KeyEvent.key()` em 26.3 devolve um **SDL scancode**, não um código GLFW nem
+   um Virtual-Key. Confirmado com `javap -constants` em `InputConstants`:
+   `KEY_A=4`, `KEY_RETURN=40`, `KEY_BACKSPACE=42`.
+2. O SDL3 só entrega caracteres **imprimíveis** no evento de texto. O GLFW
+   (1.21.4) também entregava `\b` e `\r`. Logo, `Backspace`/`Enter` já nunca
+   chegam como `charTyped` — e o `charTyped` é **o único caminho que se sabe
+   funcionar** (é por ele que as letras entram).
+3. Bónus, pela mesma via: a tabela `toAwtKeyCode` do mcef-modern mapeia
+   `KEY_RETURN` para **10** (o `VK_ENTER` do AWT, que é o enter do teclado
+   numérico) em vez de **13** (`VK_RETURN`). `INSERT` e `DELETE` também estão
+   errados. `tools/ProbeKeycodes.java` executa essa tabela e mostra o resultado.
+
+**Correção:** `BrowserInstance.sendControlCharacter()` envia o carácter de
+controlo pelo caminho `charTyped`, que é o comprovadamente funcional, como
+**extras** — o evento de tecla bruto continua a ser enviado. Cobre `Backspace`
+(8), `Enter` (13), `Tab` (9), `Delete` (127). Log: `SYNTH CHAR key=… cp=…`.
+
+**Previsão que o teste tem de confirmar:** o log da página de teste vai mostrar
+`INPUT`/`KEYPRESS` com `data` = `'\b'` ou `'\r'`, mas **sem `KEYDOWN`**. Isso
+provaria que o caminho de tecla bruto não chega ao Chromium, e que é por isso
+que as setas, `Home`/`End` e `PageUp`/`PageDown` provavelmente também não
+funcionam — caso que fica para o bug A resolver pelo mesmo caminho.
+
+**Estado:** por testar. `9a0f...` (ver `git log`).
 
 ### B) ~~Tecla `N`~~ — **RESOLVIDO** 2026-10-16
 

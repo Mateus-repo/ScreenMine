@@ -23,16 +23,38 @@ public final class TestPage {
     }
 
     /**
-     * The page as a data: URL.
+     * Writes the page to {@code <config>/screenmine/testpage.html} and returns a
+     * file URL for it.
      *
-     * <p>A data URL rather than a file on disk, so there is nothing to write,
-     * nothing to clean up and nothing to version. The {@code //} before the
-     * charset keeps it out of the way of URL parsing, and the HTML is small
-     * enough that the length is not a problem.
+     * <p>A file, not a data: URL, because this JCEF build will not navigate to
+     * one. The 2026-10-16 12:09 run asked for
+     * {@code data:text/html;base64,…} and the browser stayed on
+     * {@code about:blank}: onLoadEnd never fired and the screen stayed grey.
+     * The only evidence was the agent reporting {@code href=about:blank},
+     * because the log recorded what we asked for and never what we got.
+     *
+     * <p>On disk it has a second use: the path is logged, so the same page can
+     * be opened in a normal browser and the two compared.
      */
-    public static String dataUrl() {
-        return "data:text/html;base64," + java.util.Base64.getEncoder()
-                .encodeToString(html().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    public static String fileUrl() {
+        java.nio.file.Path dir = net.fabricmc.loader.api.FabricLoader.getInstance()
+                .getConfigDir().resolve("screenmine");
+        java.nio.file.Path file = dir.resolve("testpage.html");
+        try {
+            java.nio.file.Files.createDirectories(dir);
+            // Written on every visit, not only when missing: the page is part
+            // of the mod, so it should follow the mod, not a stale copy.
+            java.nio.file.Files.writeString(file, html(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException("could not write the test page to " + file, ex);
+        }
+        return file.toUri().toString();
+    }
+
+    /** Where {@link #fileUrl()} writes it, for the log. */
+    public static String path() {
+        return net.fabricmc.loader.api.FabricLoader.getInstance()
+                .getConfigDir().resolve("screenmine").resolve("testpage.html").toString();
     }
 
     private static String html() {

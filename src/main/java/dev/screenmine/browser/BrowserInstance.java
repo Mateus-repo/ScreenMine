@@ -296,6 +296,20 @@ private volatile boolean closed;
      * that appears after the injection has no agent in it. The script is
      * idempotent, so re-running it costs one no-op per live frame.
      */
+    /**
+     * Whether the browser is sitting on the blank page it was created with.
+     *
+     * <p>Used as the failure signal for a navigation that never happened. A
+     * browser that was asked for a page and is still on about:blank has loaded
+     * nothing, which is why the screen is grey - and that was invisible before,
+     * because the log only ever recorded the request and never the result.
+     */
+    private static boolean isStillBlank(CefBrowser cef) {
+        String actual = cef.getURL();
+        return actual == null || actual.isEmpty()
+                || "about:blank".equals(actual);
+    }
+
     public void pumpAgent() {
         CefBrowser cef = cef();
         if (cef == null) {
@@ -307,7 +321,18 @@ private volatile boolean closed;
             }
             agentInjected = true;
             injectAgent();
-            LOGGER.info("AGENT injected by retry (onLoadEnd never fired)");
+            // Report what the browser actually holds, not what we asked it to
+            // load. Those two are not the same thing and the difference is the
+            // whole bug: the 12:09 run asked for a data: URL, the browser stayed
+            // on about:blank, and the log said "NAVIGATE to screenmine:test" so
+            // nothing looked wrong. An agent that reports href=about:blank after
+            // being asked for something else is the signature of a failed load.
+            LOGGER.info("AGENT injected by retry; asked={} browser-has={}",
+                    currentUrl, cef.getURL());
+            if (isStillBlank(cef)) {
+                LOGGER.error("LOAD FAILED: asked for {} but the browser is still on about:blank,"
+                        + " so nothing was ever painted and the screen stays grey", currentUrl);
+            }
             return;
         }
         if (++agentTicks < FRAME_WATCH_TICKS) {
@@ -762,14 +787,16 @@ private volatile boolean closed;
             return;
         }
         applyingRemote = remote;
-        // The built-in test page is a marker, not a real address. It becomes a
-        // data URL so there is no file to write and nothing to clean up. It
-        // still goes through the normal load path, so the agent, the handlers
-        // and the texture all behave exactly as they do for any other page.
-        String target = TestPage.URL.equalsIgnoreCase(url) ? TestPage.dataUrl() : url;
+        // The built-in test page is a marker, not a real address. It is written
+        // to disk and loaded over file:// - see TestPage.fileUrl() for why a
+        // data: URL does not work here. It still goes through the normal load
+        // path, so the agent, the handlers and the texture all behave exactly
+        // as they do for any other page.
+        String target = TestPage.URL.equalsIgnoreCase(url) ? TestPage.fileUrl() : url;
         currentUrl = target;
         playbackTime = -1;
         appliedGain = -1.0;
+        LOGGER.info("LOAD asked={}", target);
         cef.loadURL(target);
         applyingRemote = false;
     }

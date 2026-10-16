@@ -1,3 +1,0 @@
-#!/bin/sh
-# Ativar uma vez por clone:  git config core.hooksPath .githooks
-exec node "$(git rev-parse --show-toplevel)/.opencode/lib/guard-cli.js"

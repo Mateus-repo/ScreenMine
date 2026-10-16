@@ -18,3 +18,7 @@ hs_err_pid*
 # Local
 .env
 *.local
+
+# Material de outro agente: transcricoes e zips. Fora do repo porque
+# contem caminhos locais e um hostname que nao e nosso.
+newstuff/

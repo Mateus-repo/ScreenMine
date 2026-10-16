@@ -1,6 +1,0 @@
-https://ffmpeg.org/download.html
-https://www.gyan.dev/ffmpeg/builds/
-https://www.curseforge.com/minecraft/mc-mods/mp4-player
-https://github.com/SrRapero720/watervision
-https://github.com/NGoedix/VideoPlayer
-https://www.free-codecs.com/download/x264_video_codec.htm

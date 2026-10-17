@@ -973,8 +973,8 @@ private volatile boolean closed;
      * the attempt to make the key path work. Nothing is sent twice - a key
      * handled here is not in {@link #controlCharacter}.
      *
-     * <p>See {@link AwtKeys} for why this goes through reflection and what it
-     * logs when it cannot work.
+     * <p>See {@link CdpKeys} for why the key code is stated through the DevTools
+     * protocol and what was tried before it.
      *
      * @return true when the key was handed to Chromium
      */
@@ -982,26 +982,7 @@ private volatile boolean closed;
         if (event.hasControlDown() || event.hasAltDown()) {
             return false;   // Ctrl+Backspace and friends are not plain editing
         }
-        int vk = AwtKeys.virtualKey(event.key());
-        if (vk == 0) {
-            return false;
-        }
-        return AwtKeys.press(cef(), vk, toAwtModifiers(event), keyName(event));
-    }
-
-    /** Minecraft's modifier mask translated to AWT's, for the key event. */
-    private static int toAwtModifiers(KeyEvent event) {
-        int m = 0;
-        if (event.hasShiftDown()) {
-            m |= java.awt.event.InputEvent.SHIFT_DOWN_MASK;
-        }
-        if (event.hasControlDown()) {
-            m |= java.awt.event.InputEvent.CTRL_DOWN_MASK;
-        }
-        if (event.hasAltDown()) {
-            m |= java.awt.event.InputEvent.ALT_DOWN_MASK;
-        }
-        return m;
+        return CdpKeys.press(cef(), CdpKeys.key(event.key()));
     }
 
     /**

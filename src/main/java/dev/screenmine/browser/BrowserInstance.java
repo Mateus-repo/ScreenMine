@@ -1164,6 +1164,40 @@ private volatile boolean closed;
         }
     }
 
+    /**
+     * Closes the underlying browser but keeps this instance usable.
+     *
+     * <p>Different from {@link #close}, which is final: that sets
+     * {@code closed} and nothing ever creates a browser again - right for a
+     * screen being removed, wrong for one that is merely out of reach.
+     *
+     * <p>This is what stops a remote screen going on costing a whole Chromium
+     * after the player walks away. The distance gate in the renderer stops one
+     * being made in the first place; this is what keeps the ones already made
+     * from piling up as the player explores.
+     *
+     * <p>Re-creating a JCEF browser is not free, which is the reason the gate
+     * exists and not this alone: without it, walking around a server would
+     * create and destroy browsers continuously. The renderer releases well past
+     * the point it would create again, so the two do not fight at the boundary.
+     */
+    public void release() {
+        if (browser == null) {
+            return;
+        }
+        LIVE.remove(browser.getCefBrowser().getIdentifier());
+        try {
+            browser.close();
+        } catch (Exception ex) {
+            LOGGER.warn("failed to release browser for {}: {}", streamId, ex.toString());
+        }
+        browser = null;
+        agentInjected = false;
+        agentTicks = 0;
+        LOGGER.info("released the browser for {}; it will be made again if the player comes back",
+                streamId);
+    }
+
     public void close() {
         closed = true;
         if (browser != null) {

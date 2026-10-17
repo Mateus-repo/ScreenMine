@@ -76,9 +76,48 @@ public final class WorldScreenRenderer {
 
         releaseDetached();
 
+        // Remote screens, nearest first, so the cap takes the ones in front of
+        // the player rather than whichever happened to be created first.
+        int remoteBudget = Cfg.MAX_REMOTE_BROWSERS;
+        var eye = mc.player.getEyePosition();
+
         for (PlacedScreen screen : world.all()) {
             if (!screen.dimension.equals(dim)) {
                 continue;
+            }
+            if (screen.browser.isRemote()) {
+                double distance = eye.distanceTo(screen.pos);
+                if (distance > Cfg.REMOTE_RELEASE_DISTANCE) {
+                    // Well out of reach. Give the Chromium back rather than
+                    // holding one for a screen nobody can see.
+                    if (screen.browser.ready()) {
+                        // release() logs, with the stream id; the renderer has no
+                        // logger of its own and should not grow one for a line.
+                        screen.browser.release();
+                    }
+                    continue;
+                }
+                if (distance > Cfg.REMOTE_SPAWN_DISTANCE) {
+                    // Inside release range but outside spawn range: keep what
+                    // exists, start nothing new.
+                    if (screen.browser.ready() && remoteBudget > 0) {
+                        remoteBudget--;
+                    } else if (!screen.browser.ready()) {
+                        continue;
+                    }
+                } else if (!screen.browser.ready()) {
+                    if (remoteBudget <= 0) {
+                        // At the cap. Draw the plate rather than a page: a
+                        // grey plate is honest, a fifth Chromium is not.
+                        place(pose, cam, screen);
+                        drawSolid(ctx, pose, screen.width, screen.height(), 16, 16, 20, 220, -1, 0, 0);
+                        pose.popPose();
+                        continue;
+                    }
+                    remoteBudget--;
+                } else {
+                    remoteBudget--;
+                }
             }
             // The browser is created lazily; until it has a frame we show the plate.
             if (!screen.browser.ensureCreated() || !screen.browser.ready()) {

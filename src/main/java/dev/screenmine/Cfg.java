@@ -64,6 +64,28 @@ public final class Cfg {
     public static final int BROWSER_WIDTH = 1920;
     public static final int BROWSER_HEIGHT = 1080;
 
+    /**
+     * How near a shared screen must be before its browser is created. Blocks.
+     *
+     * <p>256 blocks is 16 chunks, which is Minecraft's default render distance:
+     * the point at which a block is last visible in the fog. A shared screen
+     * further away than this cannot be seen, and each one is a whole Chromium,
+     * so building it would cost a great deal for something nobody is looking at.
+     */
+    public static final float REMOTE_SPAWN_DISTANCE = 256.0f;
+
+    /**
+     * How far past {@link #REMOTE_SPAWN_DISTANCE} a browser is given up.
+     *
+     * <p>Wider on purpose. Releasing at the same distance it is created would
+     * make a player standing exactly on the boundary create and destroy a
+     * browser every frame, which is far worse than holding one too long.
+     */
+    public static final float REMOTE_RELEASE_DISTANCE = 320.0f;
+
+    /** Shared screens this client may hold a live browser for at once. */
+    public static final int MAX_REMOTE_BROWSERS = 4;
+
     public static final String DEFAULT_URL = "https://www.youtube.com";
 
     /** Screen size limits, in blocks (width). */

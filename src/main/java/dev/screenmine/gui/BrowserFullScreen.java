@@ -256,7 +256,8 @@ public final class BrowserFullScreen extends Screen {
         }
         // Backspace, Enter, Tab and Delete never arrive as characters in 26.3,
         // so the raw key event alone is not enough for them. The raw event is
-        // still sent; this is an extra character alongside it.
+        // still sent; these are extras alongside it.
+        screen.browser.sendKeyAsKey(event);
         screen.browser.sendControlCharacter(event);
         b.onKeyPressed(event);
         b.setFocus(true);

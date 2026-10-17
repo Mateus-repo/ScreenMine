@@ -116,6 +116,7 @@ public final class ScreenMineClient implements ClientModInitializer {
                 (gfx, delta) -> hud.render(gfx));
 
         CodecProbe.loadSetting();
+        BrowserInstance.installCrashLogging();
 
         LOG.info("ScreenMine ready — network {}", Cfg.networkStatus());
     }
@@ -463,8 +464,10 @@ public final class ScreenMineClient implements ClientModInitializer {
         if (action == InputConstants.RELEASE) {
             b.raw().onKeyReleased(event);
         } else {
-            // Same reason as the overlay: these four never reach the page as
-            // characters under SDL3, so one is sent alongside the key event.
+            // Same reason as the overlay: these keys never reach the page as
+            // characters under SDL3. The key event is tried first, the
+            // character is the fallback, and neither replaces the raw event.
+            b.sendKeyAsKey(event);
             b.sendControlCharacter(event);
             b.raw().onKeyPressed(event);
         }

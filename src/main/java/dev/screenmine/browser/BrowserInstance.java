@@ -966,19 +966,59 @@ private volatile boolean closed;
     }
 
     /**
+     * Sends a control key that has no printable character as a real key event.
+     *
+     * <p>Called before the raw key event so that a key which works both ways
+     * still arrives: the character path is the one proven to work, and this is
+     * the attempt to make the key path work. Nothing is sent twice - a key
+     * handled here is not in {@link #controlCharacter}.
+     *
+     * <p>See {@link AwtKeys} for why this goes through reflection and what it
+     * logs when it cannot work.
+     *
+     * @return true when the key was handed to Chromium
+     */
+    public boolean sendKeyAsKey(KeyEvent event) {
+        if (event.hasControlDown() || event.hasAltDown()) {
+            return false;   // Ctrl+Backspace and friends are not plain editing
+        }
+        int vk = AwtKeys.virtualKey(event.key());
+        if (vk == 0) {
+            return false;
+        }
+        return AwtKeys.press(cef(), vk, toAwtModifiers(event), keyName(event));
+    }
+
+    /** Minecraft's modifier mask translated to AWT's, for the key event. */
+    private static int toAwtModifiers(KeyEvent event) {
+        int m = 0;
+        if (event.hasShiftDown()) {
+            m |= java.awt.event.InputEvent.SHIFT_DOWN_MASK;
+        }
+        if (event.hasControlDown()) {
+            m |= java.awt.event.InputEvent.CTRL_DOWN_MASK;
+        }
+        if (event.hasAltDown()) {
+            m |= java.awt.event.InputEvent.ALT_DOWN_MASK;
+        }
+        return m;
+    }
+
+    /**
      * The character a control key stands for, or 0 when the key has none.
      *
-     * <p>The values are the ASCII control codes, which is what a page editing
-     * command actually looks for: {@code \b} deletes backwards and {@code \r}
-     * submits.
+     * <p>Only Backspace, Enter and Tab. Everything else that a character cannot
+     * carry goes through {@link #sendKeyAsKey} instead.
      *
-     * <p><b>Delete is not in this list, and that is deliberate.</b> It has no
-     * printable character to offer: 127 is DEL in ASCII, but delivered as text
-     * Chromium inserts it rather than acting on it, and the user sees an
-     * invisible character appear instead of the next character being removed.
-     * Verified in game - reported as "Delete gives a space", which is what an
-     * unprintable insertion looks like. Delete has to travel as a key, so it
-     * waits for the raw-key path to work.
+     * <p>Enter and Tab are here and were verified in game. Backspace is here
+     * only as a fallback, because sending {@code \b} did <em>not</em> delete in
+     * the run that measured it.
+     *
+     * <p><b>Delete is deliberately absent.</b> It has no printable character to
+     * offer: 127 is DEL in ASCII, but delivered as text Chromium inserts it
+     * rather than acting on it, and the user saw an invisible character appear
+     * instead of the next character going. There is no forward-delete in the
+     * character stream, which is the same reason Backspace needs the key path.
      */
     private static int controlCharacter(KeyEvent event) {
         if (event.hasControlDown() || event.hasAltDown()) {
@@ -1032,6 +1072,40 @@ private volatile boolean closed;
                 keyName(event), codepoint, new Character((char) codepoint).toString());
         b.onCharTyped(new CharacterEvent(codepoint));
         return true;
+    }
+
+    /**
+     * Puts anything the browser throws into our own log instead of stderr.
+     *
+     * <p>There was an "Exception in thread AWT-EventQueue-0" on every click and
+     * every Ctrl that only ever reached the Gradle console, never
+     * {@code latest.log}, which is why it could not be found by reading logs.
+     * Minecraft routes nothing from stderr into its log, so an exception on a
+     * thread the game does not own is invisible to every diagnostic we have.
+     * An uncaught handler writes it where it can be read, with the stack trace
+     * attached, and says which thread it came from.
+     *
+     * <p>Installed once. It chains to whatever handler was already there, so it
+     * does not swallow the game's own reporting.
+     */
+    public static void installCrashLogging() {
+        Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
+            LOGGER.warn("UNCAUGHT on {} : {}", thread.getName(), describe(error), error);
+            if (previous != null) {
+                previous.uncaughtException(thread, error);
+            }
+        });
+        LOGGER.info("unhandled exceptions will be logged to ScreenMine/input");
+    }
+
+    private static String describe(Throwable ex) {
+        Throwable root = ex;
+        while (root.getCause() != null) {
+            root = root.getCause();
+        }
+        return root.getClass().getName()
+                + (root.getMessage() == null ? "" : ": " + root.getMessage());
     }
 
     /** Readable name for a key, so the log says BACKSPACE instead of 42. */

@@ -24,6 +24,14 @@ Os dois `breaks` mútuos estão declarados e `node tools/check-breaks.mjs` dá
 
 ### Notas para mais tarde
 
+- **Spike do browser no servidor: em curso.** O que se mediu na máquina, o que
+  falta e as decisões que esperam por resposta estão em
+  `docs/spike-server-browser.md`. Resumo: a máquina é um portátil real (não é
+  VPS) com 8 núcleos, 10 GB de RAM e **sem qualquer ecrã**; o JCEF faz
+  *offscreen rendering* por isso isso não é problema; faltam 13 bibliotecas do
+  Chromium e o `sudo` precisa de senha. **Nada foi formatado nem apagado.**
+### Notas para mais tarde
+
 - **O ficheiro de config nunca é actualizado.** `Settings` escreve o template
   só quando o ficheiro não existe, portanto quem correu uma build antiga nunca
   vê as chaves novas — foi o que aconteceu no PC de teste, onde

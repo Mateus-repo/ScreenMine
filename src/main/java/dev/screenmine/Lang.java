@@ -123,6 +123,9 @@ public final class Lang {
         put("menu.share.remove", "Remove my shared screens", "Убрать свои общие экраны");
         put("chat.share.off", "mp.acceptRemote is 0, so shared screens are off. Set it to 1 in config/screenmine_mp.properties.", "mp.acceptRemote = 0, общие экраны выключены.");
         put("chat.share.none", "You have no shared screens", "У тебя нет общих экранов");
+        put("chat.share.notyours",
+                "That screen is another player's, so you cannot drive it. You can watch it - it stays in step with the owner.",
+                "????? ????? ?????? ???? ??????? ????? ???? - ?? ?? ????? ?? ??????.");
         put("menu.screens.none", "— no screens placed —", "— экранов нет —");
         put("menu.screens.aimed", "  ← aimed", "  ← наведён");
         put("menu.screens.page", "%d/%d", "%d/%d");

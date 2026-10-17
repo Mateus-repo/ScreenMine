@@ -71,6 +71,10 @@ Os dois `breaks` mútuos estão declarados e `node tools/check-breaks.mjs` dá
   nossa: é o default do JCEF. O `--disable-web-security` **não** está lá, pelo
   que a política de mesma-origem se mantém — uma página não lê os nossos
   ficheiros. Isto fica para o README, não é trabalho.
+- **Um viewer pode redimensionar localmente o ecrã de outro** (as teclas de
+  tamanho usam `targetScreen()`, que não olha para `isRemote()`). Não é buraco:
+  muda só o tamanho local, o servidor não valida nem o dono é afectado. Ficou
+  de fora por ser inofensivo, mas é a mesma omissão que o control mode tinha.
 - **Pendentes de segurança, por esta ordem:** `onResourceRequest` para
   sub-recursos de browsers remotos (a allowlist só cobre a frame principal);
   isolar cookies por ecrã remoto (`MCEFApiImpl.createBrowser` passa

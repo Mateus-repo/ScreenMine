@@ -36,6 +36,21 @@ public final class Settings {
 
     private static final Path FILE = Paths.get("config", "screenmine_mp.properties");
 
+    /**
+     * Where the settings actually live.
+     *
+     * <p>So a test or a diagnostic can name the real file instead of guessing
+     * it. {@code ProbeNetworkDefault} had the pre-multiplayer name hardcoded and
+     * was writing a config nobody read: seven of its eleven cases passed by
+     * accident because falling back to the default looks exactly like "off", and
+     * the four that were supposed to prove the switch turns on failed. A probe
+     * that cannot find the file under test still produces plausible numbers,
+     * which is the dangerous kind of rot.
+     */
+    public static Path file() {
+        return FILE;
+    }
+
     private static final String TEMPLATE = """
             # ScreenMine (Multiplayer) settings.
             #

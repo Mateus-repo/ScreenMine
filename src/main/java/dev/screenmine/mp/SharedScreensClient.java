@@ -101,6 +101,33 @@ public final class SharedScreensClient {
     }
 
     /** Whether this player owns any shared screen right now. */
+    /**
+     * Whether a shared screen is one this player put up.
+     *
+     * <p>Takes the stream id as a string on purpose. Local screens are named
+     * things like "local-1a2b3c" and are not UUIDs, so parsing here would throw
+     * for every screen that is not a shared one - and the caller asks about both.
+     *
+     * <p>Needed because the owner sees their own shared screen as a remote one:
+     * it arrives through {@code ScreenAdded} like everybody else's does, so that
+     * everybody gets the identical screen from the identical code path. "Remote"
+     * therefore says where the screen came from, not whose it is, and a check that
+     * only looked at {@code isRemote()} would lock the owner out of the screen
+     * they put up.
+     */
+    public static boolean isMine(String streamId) {
+        String me = meName();
+        if (me == null) {
+            return false;
+        }
+        for (java.util.Map.Entry<java.util.UUID, String> e : OWNED_BY_NAME.entrySet()) {
+            if (e.getKey().toString().equals(streamId) && me.equals(e.getValue())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static boolean hasMine(net.minecraft.client.Minecraft mc) {
         return !mineOwned().isEmpty();
     }
@@ -133,7 +160,7 @@ public final class SharedScreensClient {
                 net.minecraft.network.chat.Component.literal(message));
     }
 
-/**
+    /**
      * Ticks for the owner of a shared screen: reports where its video is.
      *
      * <p>Called once per client tick from the mod's tick. Every screen this
@@ -182,7 +209,9 @@ public final class SharedScreensClient {
             (int) (PlaybackSync.REPORT_INTERVAL_MILLIS / 50L);
 
     private static int syncTicks;
-    /** Registers the three server-to-client receivers. */
+    /**
+     * Registers the server-to-client receivers and keeps the world for the tick.
+     */
     public static void register(ScreenWorld world) {
         WORLD = world;
         ClientPlayNetworking.registerGlobalReceiver(Payloads.ScreenAdded.TYPE, (added, context) -> {

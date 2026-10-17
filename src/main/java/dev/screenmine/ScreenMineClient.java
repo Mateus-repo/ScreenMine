@@ -171,8 +171,28 @@ public final class ScreenMineClient implements ClientModInitializer {
         if (currentHit == null) {
             return false;
         }
+        PlacedScreen aimed = currentHit.screen();
+        // Somebody else's shared screen is not driveable. Two reasons, and the
+        // second only became true when the playback sync landed.
+        //
+        // The first is the design: the owner is the one who drives. Moving is
+        // already refused by the server, navigation is already held to the
+        // allowlist, and driving was the gap.
+        //
+        // The second is that a viewer who drives it now fights the sync. They
+        // seek, the owner's next report arrives two seconds later and drags them
+        // back, and that repeats until they let go. Before the sync this was
+        // merely impolite; after it it is a loop.
+        //
+        // isRemote() alone is not the test: the owner's own shared screen is
+        // remote too, because it arrives over ScreenAdded like all the others.
+        if (aimed.browser.isRemote()
+                && !dev.screenmine.mp.SharedScreensClient.isMine(aimed.streamId)) {
+            chat(Component.literal(dev.screenmine.Lang.t("chat.share.notyours")));
+            return false;
+        }
         controlMode = true;
-        BrowserInstance b = currentHit.screen().browser;
+        BrowserInstance b = aimed.browser;
         if (b.raw() != null) {
             b.raw().setFocus(true);
         }

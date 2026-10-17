@@ -64,6 +64,13 @@ public final class SharedScreens {
      * record is a straight copy of what every client must be told about a
      * screen, and this is per-viewer chatter that changes twice a second; mixing
      * the two would mean the join-sync rebuilt a record on every report.
+     *
+     * <p>Only the paused flag is ever read back, and saying so is the point of
+     * this note: it is the one value whose change has to be noticed, because a
+     * pause is the one event a viewer is waiting for. The time is stored so that
+     * the state is whole, not because something consults it - a player who joins
+     * gets {@code ScreenAdded} and is pulled into place by the owner's next
+     * report within one interval, which is at most two seconds.
      */
     private final Map<UUID, PlaybackState> playback = new HashMap<>();
 

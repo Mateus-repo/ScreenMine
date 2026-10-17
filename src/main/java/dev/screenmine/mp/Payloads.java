@@ -9,7 +9,7 @@ import net.minecraft.resources.Identifier;
 import java.util.UUID;
 
 /**
- * The messages that make a shared screen work: eight of them, four each way.
+ * The messages that make a shared screen work: ten of them, five each way.
  *
  * <h2>Shape</h2>
  *

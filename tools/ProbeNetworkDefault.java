@@ -69,8 +69,13 @@ public class ProbeNetworkDefault {
 
     private static void run(Case c) throws Exception {
         Path dir = Files.createTempDirectory("sm-net-");
-        Files.createDirectories(dir.resolve("config"));
-        Files.writeString(dir.resolve("config").resolve("screenmine.properties"), c.config());
+        // O nome do ficheiro vem do proprio Settings. Hardcoded, este probe
+        // escrevia screenmine.properties enquanto o mod lia
+        // screenmine_mp.properties: escrevia um ficheiro que ninguem lia e os
+        // casos que passam a falhar pareciam bugs do interruptor.
+        Path cfg = dir.resolve(dev.screenmine.Settings.file());
+        Files.createDirectories(cfg.getParent());
+        Files.writeString(cfg, c.config());
 
         String out;
         try {
@@ -93,12 +98,24 @@ public class ProbeNetworkDefault {
 
     private static String child(Path dir) throws Exception {
         Path self = Path.of("tools", "ProbeNetworkDefault.java").toAbsolutePath();
-        // O classpath tem de ser absoluto: a JVM filha corre noutro diretorio de
-        // trabalho, e um caminho relativo ai aponta para o sitio errado. Falha
-        // com ClassNotFoundException, que nao diz nada sobre o que se queria
-        // testar.
-        String cp = Path.of(System.getProperty("java.class.path"))
-                .toAbsolutePath().normalize().toString();
+        // Cada entrada do classpath tem de ser absoluta: a JVM filha corre noutro
+        // diretorio de trabalho, e um caminho relativo ai aponta para o sitio
+        // errado. Falha com ClassNotFoundException, que nao diz nada sobre o que
+        // se queria testar.
+        //
+        // Entrada a entrada, e nao o classpath inteiro como um caminho so: em
+        // Windows o separador e' ';', que nao e' legal num caminho. Feito assim
+        // o probe so corria com uma unica entrada no classpath e rebentava com
+        // IllegalPathException em qualquer outro - 11 de 11 falhas que nao tinham
+        // nada a ver com o que se estava a testar.
+        String cp = java.util.Arrays.stream(
+                        System.getProperty("java.class.path")
+                                .split(java.util.regex.Pattern.quote(
+                                        java.io.File.pathSeparator)))
+                .filter(s -> !s.isBlank())
+                .map(s -> Path.of(s).toAbsolutePath().normalize().toString())
+                .collect(java.util.stream.Collectors.joining(
+                        java.io.File.pathSeparator));
         List<String> cmd = new ArrayList<>(List.of("java", "-cp", cp, self.toString(), "case"));
         Process p = new ProcessBuilder(cmd)
                 .directory(dir.toFile())

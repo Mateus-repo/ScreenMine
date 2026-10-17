@@ -237,7 +237,13 @@ private volatile boolean closed;
         // at all, which is the signature: the page agent was never injected, and
         // with it went the volume enforcement, the playback tracking and the
         // editing shim. The bug report "N does nothing in the world" was this.
-        String target = currentUrl;
+        // currentUrl is what navigate() was given, which for the built-in test
+        // page is the screenmine:test marker rather than a real address. It has
+        // to be resolved here too, not only inside navigate(): a browser created
+        // from the spawn path never went through navigate(), so the marker reached
+        // loadURL as-is and the screen stayed grey. The 01:14 run logged
+        // "LOAD FAILED: asked for screenmine:test".
+        String target = resolve(currentUrl);
         LOGGER.info("CREATE url={} surface={}x{}", target, surfaceWidth, surfaceHeight);
         // Without this, a createBrowser that throws would be retried on every
         // frame of every screen, because the renderer calls ensureCreated() once
@@ -781,6 +787,19 @@ private volatile boolean closed;
 
     // ---------------------------------------------------------------- control //
 
+    /**
+     * Turns a stored target into something the browser can actually load.
+     *
+     * <p>One place, on purpose. The test page arrives as the marker
+     * {@code screenmine:test} and has to become a file URL; resolving it in
+     * navigate() alone left the spawn path - which creates the browser before
+     * navigating - handing the bare marker to loadURL, which loads nothing and
+     * leaves the screen grey. Two callers, one resolver.
+     */
+    private static String resolve(String url) {
+        return url != null && TestPage.URL.equalsIgnoreCase(url) ? TestPage.fileUrl() : url;
+    }
+
     public void navigate(String url, boolean remote) {
         CefBrowser cef = cef();
         if (cef == null || url == null || url.isEmpty()) {
@@ -792,7 +811,7 @@ private volatile boolean closed;
         // data: URL does not work here. It still goes through the normal load
         // path, so the agent, the handlers and the texture all behave exactly
         // as they do for any other page.
-        String target = TestPage.URL.equalsIgnoreCase(url) ? TestPage.fileUrl() : url;
+        String target = resolve(url);
         currentUrl = target;
         playbackTime = -1;
         appliedGain = -1.0;
@@ -950,8 +969,16 @@ private volatile boolean closed;
      * The character a control key stands for, or 0 when the key has none.
      *
      * <p>The values are the ASCII control codes, which is what a page editing
-     * command actually looks for: {@code \b} deletes backwards, {@code \r}
-     * submits, {@code \t} moves focus.
+     * command actually looks for: {@code \b} deletes backwards and {@code \r}
+     * submits.
+     *
+     * <p><b>Delete is not in this list, and that is deliberate.</b> It has no
+     * printable character to offer: 127 is DEL in ASCII, but delivered as text
+     * Chromium inserts it rather than acting on it, and the user sees an
+     * invisible character appear instead of the next character being removed.
+     * Verified in game - reported as "Delete gives a space", which is what an
+     * unprintable insertion looks like. Delete has to travel as a key, so it
+     * waits for the raw-key path to work.
      */
     private static int controlCharacter(KeyEvent event) {
         if (event.hasControlDown() || event.hasAltDown()) {
@@ -966,9 +993,6 @@ private volatile boolean closed;
         }              // mcef-modern's own table maps KEY_RETURN to
         if (key == InputConstants.KEY_TAB) {
             return 9;   // \t
-        }
-        if (key == InputConstants.KEY_DELETE) {
-            return 127; // DEL
         }
         return 0;
     }
@@ -990,6 +1014,8 @@ private volatile boolean closed;
      * <p>Sending the character explicitly routes these keys down the one path
      * that is known to reach the page. It is a fallback, not a replacement: the
      * raw key event is still sent too, so a key that does work keeps working.
+     * Verified in game: Enter and Tab arrive. Backspace still does nothing, and
+     * the open question is why the raw key path does not deliver it.
      *
      * @return true when a character was sent for this key
      */

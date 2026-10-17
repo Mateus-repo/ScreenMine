@@ -50,6 +50,38 @@
     outro ficheiro de plano, ele passa a ser lido como fonte de verdade — ou
     então elimina-o quando o plano for absorvido.
 
+## Duas versões: `port/26.3` e `multiplayer`
+
+São **o mesmo mod com dois ids**. Não é um projeto Gradle com módulos
+partilhados: isso fica para quando o código comum estabilizar. Até lá, branches.
+
+| Branch | id | O que é |
+|---|---|---|
+| `port/26.3` | `screenmine` | Versão **local**: client-only, funciona em qualquer servidor, só tu vês o ecrã. É a linha estável. |
+| `multiplayer` | `screenmine_mp` | Nasce da local. `config/screenmine_mp.properties`, jar e categoria de teclas próprios. `breaks` mútuo: os dois mods **não** entram no mesmo perfil. |
+
+**Os merges vão só num sentido: `port/26.3` → `multiplayer`.**
+
+- Uma correcção comum (teclas, render, browser) entra primeiro na `port/26.3`
+  e só depois é fundida na `multiplayer`.
+- **Nunca** fundir `multiplayer` em `port/26.3`. Se uma correção só fizer
+  sentido na multiplayer, fica na multiplayer até deixar de fazer sentido só
+  lá.
+- Código **novo** de rede em `dev.screenmine.mp.*`. Fica em pacotes próprios
+  para haver poucos conflitos na fusão. Não espalhar código de rede pelos
+  pacotes existentes.
+- Antes de uma fusão: compilar e testar **as duas** branches. Uma keyboard
+  partida que só se vê depois da fusão custa mais que a fusão.
+- Um commit por versão. Não alteres o `MOD_ID` da local — a local é
+  `screenmine` e fica `screenmine`.
+- **Parar e perguntar antes de qualquer force push**, em qualquer branch.
+
+Na versão local a rede fica **inativa por defeito** (`network.enabled=false`)
+e sem sockets abertos. Quem a instala não precisa de uma superfície de ataque
+remota, e o log tem de dizer isso numa linha ao arrancar. A multiplayer só
+ligar a rede quando a autenticação existir — o plano está em
+`docs/multiplayer-plan.md`, na branch `multiplayer`.
+
 ## Fluxo de trabalho
 1. `mc-port-workflow` — fases do port do início ao fim.
 2. `fabric-loom-setup` — build, loom, `fabric.mod.json`.

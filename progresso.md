@@ -8,6 +8,21 @@
 > (registos temporários da branch `spike/codecs`; absorver e apagar antes de
 > fechar a branch).
 
+## Duas versões
+
+| Branch | id | Estado |
+|---|---|---|
+| `port/26.3` | `screenmine` | **A linha de trabalho.** Client-only, rede inactiva por defeito. |
+| `multiplayer` | `screenmine_mp` | **Congelada.** Só tem o plano. |
+
+Merges só `port/26.3` → `multiplayer`, nunca ao contrário. A multiplayer só
+descongela quando o bug A estiver fechado. Politica completa no `AGENTS.md`;
+plano e decisões em `docs/multiplayer-plan.md` (na branch `multiplayer`).
+
+Os dois `breaks` mútuos estão declarados e `node tools/check-breaks.mjs` dá
+14/14. O que isso **não** prova é que o Fabric recusa os dois no arranque: isso
+é o `ModSolver` e precisa de um arranque real.
+
 **Última actualização:** 2026-10-16 · **Branch:** `spike/codecs` · **Compila:** sim, 0 erros
 
 ---
@@ -94,7 +109,10 @@ provaria que o caminho de tecla bruto não chega ao Chromium, e que é por isso
 que as setas, `Home`/`End` e `PageUp`/`PageDown` provavelmente também não
 funcionam — caso que fica para o bug A resolver pelo mesmo caminho.
 
-**Estado:** por testar. `9a0f...` (ver `git log`).
+**Estado:** jar no perfil, por testar. `58f22c0`. O jar foi verificado depois de
+copiado: `SYNTH CHAR` e `sendControlCharacter` estão lá, e a página de teste já
+usa `fileUrl` (`9942ca0` — o `data:` URL nunca carregava, o browser ficava em
+`about:blank`).
 
 ### B) ~~Tecla `N`~~ — **RESOLVIDO** 2026-10-16
 
@@ -102,7 +120,7 @@ Muta mesmo, com prova no log. Resolvido pela mudança que injectou o agente em
 **todos** os frames (`1e3a570`): o vídeo do YouTube vive num documento que o
 agente não alcançava. Ver `review.md` §A2.
 
-### C) Vídeo noutros sítios — **causa confirmada, solução do teu lado** `[PRIORIDADE 2]`
+### D) Vídeo noutros sítios - **causa confirmada, solução do teu lado** `[PRIORIDADE 2]`
 
 O Chromium do `mcef-modern` **não tem H.264, nem AAC, nem HEVC** — medido em
 jogo, não inferido. Só VP9, AV1, Opus, Vorbis.

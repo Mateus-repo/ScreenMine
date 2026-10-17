@@ -11,6 +11,38 @@ Contexto: a branch `multiplayer` (`screenmine_mp`) nasce da `port/26.3`
 
 ## (a) O que o canal `where` transporta, de facto
 
+### Antes de tudo: o servidor não existe
+
+Isto muda o resto do plano, por isso fica em primeiro.
+
+`NetClient` é a metade **cliente** de um protocolo. A metade **servidor** não
+está em lado nenhum:
+
+| Onde | O que há |
+|---|---|
+| Este repo | `NetClient.java`, `Packets.java`. Nenhum socket de escuta, nenhum `ServerSocket`, nenhum ficheiro de servidor. |
+| `../CoScreen-main` (referência) | Também **só o cliente**. O README dela é o kit de skills do opencode, não o mod. |
+
+Portanto o CHANGELOG afirmava algo falso — dizia que "a companion server
+exists behind them". Não existe. Corrigido.
+
+O que isso significa na prática:
+
+- **Não háBug de autenticação para corrigir.** Não há servidor para pôr auth.
+  O trabalho é **escrever o servidor de raiz**, e só depois pôr-lhe auth.
+- A metade que existe é o protocolo: os tipos de pacote estão definidos em
+  `Packets.java` e o cliente já fala JSON delimitado por linhas. Isso é
+  reaproveitável como especificação.
+- O `hello` (nome e versão, sem token) é o que um servidor **novo** receberia.
+  Como não há ninguém do outro lado, o formato ainda pode ser mudado para
+  levar o código de convite sem compatibilidade a preservar.
+
+**O que tens de ter a correr para dois clientes:** um servidor novo. Não
+existe nada para arrancar. O `server.host`/`server.port` na config dizem aonde
+ele estaria, e nada mais.
+
+### O canal `where`
+
 Verificado em `net/Packets.java` e `ScreenMineClient`.
 
 O emissor é `Packets.where(String serverId)`:
@@ -342,6 +374,7 @@ coisa. É uma funcionalidade, não um bug, e fica para depois.
 
 | | |
 |---|---|
+| **Servidor** | **Não existe.** Nem aqui, nem no CoScreen de referência. Só o cliente. |
 | O que o `where` transporta | Só o endereço do servidor de Minecraft. Sem posições. |
 | Partilhar colocação sem mod no servidor | Sim, com um pacote novo (`place`). O servidor do Minecraft fica de fora. |
 | Autenticação | **Não existe.** O `hello` leva nome e versão. |
@@ -354,19 +387,23 @@ coisa. É uma funcionalidade, não um bug, e fica para depois.
 
 ## Ordem de trabalho
 
-A branch `multiplayer` fica **congelada** até o bug A (teclas de edição) estar
-fechado na `port/26.3`. É a linha que já tem prioridade, e qualquer correcção
-entra primeiro lá e só depois é fundida na multiplayer.
+A ordem mudou depois de se descobrir que **o servidor não existe**. Antes o
+primeiro item era a autenticação; agora é ter um servidor a correr.
 
-Quando a multiplayer arrancar, por esta ordem — a autenticação primeiro, porque
-sem ela os restantes são decoração:
+A branch `multiplayer` continua a depender do bug A (teclas de edição) estar
+fechado na `port/26.3` para o trabalho a sério. O que se segue pode ser feito
+antes disso.
 
-1. Convite + TLS. Só isto já muda a natureza do serviço.
-2. Contexto de browser isolado por ecrã. Sem isto, nenhum amigo pode entrar no
-   Jellyfin sem entrar na sessão do dono.
-3. Só o dono envia `navigate` e `ctl`.
-4. Limites de tamanho e validação de tipos.
-5. Lista de domínios com confirmação no cliente.
-6. Pacote `place` e partilha da colocação.
+1. **Spike do contexto isolado.** Provar que um browser criado com
+   `CefBrowserFactory.create` e um `CefRequestContext` próprio pinta na textura
+   do Minecraft. Se não pintar, o desenho muda e é melhor sabê-lo já.
+2. **Escrever o servidor.** Do zero. Precisa de: escutar, agrupar clientes por
+   sala, relançar `place`, `state` e `ctl`, e ligar o relógio. Reaproveitar
+   `Packets.java` como especificação.
+3. **Convite + TLS**, no servidor novo. Como não há servidor antigo, o `hello`
+   pode mudar de formato sem compatibilidade a preservar.
+4. **Contexto isolado por ecrã**, ligado ao item 1.
+5. Só o dono envia `navigate` e `ctl`.
+6. Limites de tamanho e validação de tipos, dos dois lados.
 
-Nenhum servidor real deve ser publicado antes de 1 e 2 estarem faits e testados.
+Nada disto se publica. E nada disto se escreve antes de o bug A fechar.

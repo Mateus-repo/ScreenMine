@@ -61,9 +61,12 @@ First release. Minecraft 1.21.4, Fabric, client-side only.
 ### Not in this release
 
 - **Watching together.** Friends, invitations, shared sessions and synchronised
-  playback are not finished. The menu entries are visible and a companion server
-  exists behind them, but synchronised playback is not reliable yet. Planned for
-  a future release.
+  playback are not finished. The menu entries are visible; behind them there is
+  a client half of a protocol and **no server**. The companion server was never
+  ported from CoScreen, because it does not exist there either — CoScreen ships
+  only a client. Nothing has ever connected: the network is switched off by
+  default and has been off in every run. Planned for a future release, and it
+  starts with writing the server.
 
 ### Known limitations
 

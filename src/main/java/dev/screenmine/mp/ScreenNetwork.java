@@ -32,7 +32,7 @@ final class ScreenNetwork {
         return screens;
     }
 
-    /** Registers the three client-to-server receivers. */
+    /** Registers the client-to-server receivers. */
     static void register() {
         screens = new SharedScreens(ScreenRules.DEFAULT_ALLOWED_HOSTS,
                 ScreenRules.MAX_SCREENS_PER_PLAYER);
@@ -131,6 +131,28 @@ final class ScreenNetwork {
                     moved.id(), moved.x(), moved.y(), moved.z(), moved.yaw()));
         });
 
+        // Playback. The owner telling everybody where its video is, twice a
+        // second. This is the only message a viewer may not send: whoever is not
+        // the owner is told not-your-screen, the same as everywhere else.
+        //
+        // Returns null with no reason when the report was fine and throttled,
+        // which is the common case and must stay silent - logging two lines a
+        // second per screen would bury the refusals that matter.
+        ServerPlayNetworking.registerGlobalReceiver(Payloads.Playback.TYPE, (pb, context) -> {
+            ServerPlayer player = context.player();
+            SharedScreens.Screen screen = screens.reportPlayback(
+                    pb.screenId(), player.getUUID(), pb.time(), pb.paused(),
+                    context.server().getTickCount() * 50L, scratch);
+            if (screen == null) {
+                if (scratch[0] != null) {
+                    refuse(context.server(), player, "playback", scratch[0]);
+                }
+                return;
+            }
+            broadcast(context.server(),
+                    new Payloads.ScreenPlayback(screen.id(), pb.time(), pb.paused()));
+        });
+
         // A newcomer is told about everything that already exists. Without this
         // a player who joins late sees an empty world and never learns why.
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
@@ -197,6 +219,10 @@ final class ScreenNetwork {
             } else if (payload instanceof Payloads.ScreenRemoved rem) {
                 if (ServerPlayNetworking.canSend(p, Payloads.ScreenRemoved.TYPE)) {
                     ServerPlayNetworking.send(p, rem);
+                }
+            } else if (payload instanceof Payloads.ScreenPlayback pb) {
+                if (ServerPlayNetworking.canSend(p, Payloads.ScreenPlayback.TYPE)) {
+                    ServerPlayNetworking.send(p, pb);
                 }
             }
         }

@@ -21,5 +21,7 @@ public class ProbePayloadIds {
         System.out.println("screen_removed -> " + Payloads.ScreenRemoved.TYPE.id());
         System.out.println("screen_navigate-> " + Payloads.ScreenNavigate.TYPE.id());
         System.out.println("screen_move    -> " + Payloads.ScreenMove.TYPE.id());
+        System.out.println("playback       -> " + Payloads.Playback.TYPE.id());
+        System.out.println("screen_playback-> " + Payloads.ScreenPlayback.TYPE.id());
     }
 }

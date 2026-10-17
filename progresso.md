@@ -53,6 +53,29 @@ Os dois `breaks` mútuos estão declarados e `node tools/check-breaks.mjs` dá
   menu por acaso. Agora repete-se a navegação de segundo a segundo, até 6 vezes,
   com `NAV RETRY n/6` e `NAV recovered` / `NAV GAVE UP`. Corrigido, **por provar
   em jogo**.
+- **Sincronização de playback — feita, por provar em jogo.** Dono → servidor → todos:
+  `Playback` e `ScreenPlayback`. O dono reporta a cada 2 s; os outros puxam-se
+  para a posição dele se a diferença passar de 2 s (`PlaybackSync`). Só o dono
+  pode reportar — um viewer a tentar mover o owner leva `not-your-screen`. O
+  servidor coage 50 reports num intervalo num só broadcast. `PlaybackSync.checkTime`
+  recusa NaN, porque o número vai parar a `v.currentTime=...` dentro da página.
+  `tools/ProbePlaybackSync.java` dá 53/53. **Não provado com dois jogadores.**
+  **O que isto não resolve:** a página ser diferente. Se o dono colocar
+  `youtube.com` (a home), cada browser decide sozinho o que mostrar e não há
+  tempo para concordar. Só com um URL directo de vídeo é que isto tem efeito.
+- **O Chromium corre com `--no-sandbox`.** Confirmado nos processos reais
+  (`jcef_helper.exe`, filhos do `javaw`): GPU, renderer e utility todos com a
+  flag. **Não há forma de a desligar**: o `CefSettings` do JCEF 146.0.10 não tem
+  campo `no_sandbox`, `MCEFApi.initialize()` não recebe argumentos, e o
+  `MCEFModernPreLaunch` inicializa o JCEF antes do nosso entrypoint. Não é
+  nossa: é o default do JCEF. O `--disable-web-security` **não** está lá, pelo
+  que a política de mesma-origem se mantém — uma página não lê os nossos
+  ficheiros. Isto fica para o README, não é trabalho.
+- **Pendentes de segurança, por esta ordem:** `onResourceRequest` para
+  sub-recursos de browsers remotos (a allowlist só cobre a frame principal);
+  isolar cookies por ecrã remoto (`MCEFApiImpl.createBrowser` passa
+  `CefRequestContext.getGlobalContext()`, e por isso **todos os ecrãs partilham
+  um jar de cookies**); aviso no chat quando `mp.acceptRemote=1`; README honesto.
 
 **Última actualização:** 2026-10-17 · **Branch:** `multiplayer` · **Compila:** sim, 0 erros
 

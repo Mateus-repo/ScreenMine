@@ -18,6 +18,22 @@ public final class RateLimiter {
     public static final int MOVE_LIMIT = 20;
     public static final int REMOVE_LIMIT = 10;
 
+    /**
+     * Playback reports per window.
+     *
+     * <p>Arithmetic, not a guess: the owner reports every
+     * {@code PlaybackSync.REPORT_INTERVAL_MILLIS} = 2s, so 5 per 10s window per
+     * screen, and a player may hold 2 screens - 10. Four times that is 40.
+     *
+     * <p>Above what an honest client sends on purpose. This bucket is the abuse
+     * limit, not the sync mechanism; the broadcast throttle in
+     * {@code SharedScreens.reportPlayback} is what keeps the message rate down,
+     * and it needs to see the reports to work at all. Capping it at the honest
+     * rate would mean one dropped packet per window silently desynchronised
+     * everybody until the next one arrived.
+     */
+    public static final int PLAYBACK_LIMIT = 40;
+
     /** The window, in milliseconds. */
     public static final long WINDOW_MILLIS = 10_000L;
 

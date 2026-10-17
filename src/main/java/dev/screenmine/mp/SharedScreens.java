@@ -55,6 +55,24 @@ public final class SharedScreens {
     private final Map<UUID, RateLimiter> navigateRate = new HashMap<>();
     private final Map<UUID, RateLimiter> moveRate = new HashMap<>();
     private final Map<UUID, RateLimiter> removeRate = new HashMap<>();
+    private final Map<UUID, RateLimiter> playbackRate = new HashMap<>();
+
+    /**
+     * Where each screen's video is, as the owner last reported it.
+     *
+     * <p>Kept beside the screens and not inside {@link Screen} on purpose. The
+     * record is a straight copy of what every client must be told about a
+     * screen, and this is per-viewer chatter that changes twice a second; mixing
+     * the two would mean the join-sync rebuilt a record on every report.
+     */
+    private final Map<UUID, PlaybackState> playback = new HashMap<>();
+
+    /** When each screen was last broadcast, so the reports cannot flood. */
+    private final Map<UUID, Long> lastSentAt = new HashMap<>();
+
+    /** What the owner last said about a screen's video. */
+    public record PlaybackState(double time, boolean paused) {
+    }
 
     public SharedScreens(Set<String> allowedHosts, int maxPerPlayer) {
         this.allowedHosts = Set.copyOf(allowedHosts);
@@ -270,16 +288,70 @@ public final class SharedScreens {
     }
 
     /** Forgets a player entirely: screens and rate buckets. */
+    /**
+     * The owner says where its video is.
+     *
+     * <p>Throttling lives here and not at the network layer, because this is
+     * the only place that knows when anything last went out for this screen.
+     * The report is always stored; whether it is forwarded is
+     * {@link PlaybackSync#shouldSend}'s call - a pause always goes out, anything
+     * else waits for the interval. A client that spams this payload therefore
+     * updates the stored state on every send and still produces one message per
+     * interval per viewer.
+     *
+     * @return the screen to broadcast, or null when there is nothing to say; in
+     *         that case {@code reason} is null, meaning accepted and throttled
+     */
+    public Screen reportPlayback(UUID screenId, UUID player, double time, boolean paused,
+                                 long nowMillis, ScreenRules.Rejection[] reason) {
+        reason[0] = null;
+        if (!rate(playbackRate, player, RateLimiter.PLAYBACK_LIMIT).tryAcquire(nowMillis)) {
+            reason[0] = new ScreenRules.Rejection("playback-too-fast",
+                    "at most " + RateLimiter.PLAYBACK_LIMIT + " per "
+                            + (RateLimiter.WINDOW_MILLIS / 1000) + "s");
+            return null;
+        }
+        Screen current = byId.get(screenId);
+        if (current == null || !current.owner().equals(player)) {
+            // Same message as everywhere else: a client probing for other
+            // people's screen ids learns nothing from this one either.
+            reason[0] = new ScreenRules.Rejection("not-your-screen", null);
+            return null;
+        }
+        ScreenRules.Rejection bad = PlaybackSync.checkTime(time);
+        if (bad != null) {
+            reason[0] = bad;
+            return null;
+        }
+
+        PlaybackState previous = playback.get(screenId);
+        boolean pausedChanged = previous == null || previous.paused() != paused;
+        playback.put(screenId, new PlaybackState(time, paused));
+
+        long last = lastSentAt.getOrDefault(screenId, Long.MIN_VALUE);
+        if (!PlaybackSync.shouldSend(last, pausedChanged, nowMillis)) {
+            return null;
+        }
+        lastSentAt.put(screenId, nowMillis);
+        return current;
+    }
+
     public void forgetPlayer(UUID player) {
         removeAllOf(player);
         placeRate.remove(player);
         navigateRate.remove(player);
         removeRate.remove(player);
         moveRate.remove(player);
+        playbackRate.remove(player);
     }
 
     private Screen forget(UUID screenId) {
         Screen gone = byId.remove(screenId);
+        // Dropped here and not at the call sites: remove() and removeAllOf() both
+        // come through here, and a screen that kept its playback state after being
+        // taken down would hold a map entry for the life of the server.
+        playback.remove(screenId);
+        lastSentAt.remove(screenId);
         if (gone == null) {
             return null;
         }

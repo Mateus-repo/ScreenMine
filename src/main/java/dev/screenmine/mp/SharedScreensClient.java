@@ -133,8 +133,58 @@ public final class SharedScreensClient {
                 net.minecraft.network.chat.Component.literal(message));
     }
 
+/**
+     * Ticks for the owner of a shared screen: reports where its video is.
+     *
+     * <p>Called once per client tick from the mod's tick. Every screen this
+     * player owns and that actually has a video is reported every
+     * {@code PlaybackSync.REPORT_INTERVAL_MILLIS}; pages without one are skipped,
+     * because a page with no video element has no position to agree on - a
+     * YouTube home feed is exactly that case, and there is no honest answer to
+     * "where are you" about a feed that decides for itself.
+     *
+     * <p>Unconditional, paused or not. A paused owner keeps reporting so that
+     * somebody who joins five minutes later lands at the right frame instead of
+     * at zero.
+     */
+    public static void tickSync() {
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.player == null || mc.getConnection() == null || !acceptRemote()) {
+            return;
+        }
+        if (++syncTicks < SYNC_TICKS) {
+            return;
+        }
+        syncTicks = 0;
+        for (java.util.UUID id : mineOwned()) {
+            PlacedScreen screen = WORLD == null ? null : WORLD.get(id.toString());
+            if (screen == null || !screen.browser.hasVideo()) {
+                continue;
+            }
+            ClientPlayNetworking.send(new Payloads.Playback(
+                    id, screen.browser.playbackTime(), screen.browser.playbackPaused()));
+        }
+    }
+
+    /**
+     * The world, set by {@link #register}. Kept so the tick can reach the
+     * screens without being handed one on every tick.
+     */
+    private static ScreenWorld WORLD;
+
+    /**
+     * Ticks between reports; 40 ticks is two seconds.
+     *
+     * <p>A tick counter and not a clock, on purpose: no wall time is needed and
+     * it lines up with the browser updates, which also arrive on the tick.
+     */
+    private static final int SYNC_TICKS =
+            (int) (PlaybackSync.REPORT_INTERVAL_MILLIS / 50L);
+
+    private static int syncTicks;
     /** Registers the three server-to-client receivers. */
     public static void register(ScreenWorld world) {
+        WORLD = world;
         ClientPlayNetworking.registerGlobalReceiver(Payloads.ScreenAdded.TYPE, (added, context) -> {
             if (!acceptRemote()) {
                 LOG.info("remote screen {} ignored: mp.acceptRemote is off",
@@ -205,6 +255,54 @@ public final class SharedScreensClient {
                     screen.dimension, mv.x(), mv.y(), mv.z(), mv.yaw(), screen.width);
             LOG.info("remote screen {} moved to {},{},{}", mv.screenId(),
                     mv.x(), mv.y(), mv.z());
+        });
+
+        // Playback from the owner. Pulled towards them, never the other way round:
+        // this is a viewer being told where the video is, and a viewer sending
+        // one is refused by the server as not-your-screen.
+        ClientPlayNetworking.registerGlobalReceiver(Payloads.ScreenPlayback.TYPE, (pb, context) -> {
+            if (!acceptRemote()) {
+                return;
+            }
+            // The owner is the source of these numbers. Applying one back to the
+            // browser that produced it would seek to a value that is now stale by
+            // the time the message lands - a loop with no fixed point.
+            if (mineOwned().contains(pb.screenId())) {
+                return;
+            }
+            // Checked again, for the same reason the URL is: a server can be
+            // wrong. seekTo() writes the number straight into a script.
+            if (PlaybackSync.checkTime(pb.time()) != null) {
+                LOG.warn("playback for {} refused: time={}", pb.screenId(), pb.time());
+                return;
+            }
+            PlacedScreen screen = world.get(pb.screenId().toString());
+            if (screen == null) {
+                return;
+            }
+            var browser = screen.browser;
+            // No video element yet means nothing to seek or to pause. Seeking
+            // anyway would restart the video at zero the moment it appears.
+            if (!browser.hasVideo()) {
+                return;
+            }
+            boolean moved = false;
+            if (browser.playbackPaused() != pb.paused()) {
+                browser.setPaused(pb.paused());
+                moved = true;
+            }
+            if (PlaybackSync.needsSeek(pb.time(), browser.playbackTime())) {
+                // seekTo is a one-shot: while the seek is in flight the browser
+                // still reports the old position, so a second report arrives
+                // before the first landed and would seek again. The next report
+                // two seconds later finds them together and does nothing.
+                browser.seekTo(pb.time());
+                moved = true;
+            }
+            if (moved) {
+                LOG.info("screen {} follows the owner to {} ({})",
+                        pb.screenId(), pb.time(), pb.paused() ? "paused" : "playing");
+            }
         });
 
         // A shared screen lives exactly as long as its owner. The server removes

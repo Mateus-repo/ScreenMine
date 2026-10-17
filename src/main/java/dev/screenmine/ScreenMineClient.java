@@ -266,6 +266,9 @@ public final class ScreenMineClient implements ClientModInitializer {
         tickAudio(mc);
         pumpAgents();
         reportOwnedStreams();
+        // Tells the server where this player's shared videos are, twice a second.
+        // Last, so it reports positions the browser updates have just refreshed.
+        dev.screenmine.mp.SharedScreensClient.tickSync();
     }
 
     private void shutdownSession() {

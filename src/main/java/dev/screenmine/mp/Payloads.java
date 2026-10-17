@@ -9,12 +9,14 @@ import net.minecraft.resources.Identifier;
 import java.util.UUID;
 
 /**
- * The six messages that make a shared screen work.
+ * The messages that make a shared screen work: eight of them, four each way.
  *
  * <h2>Shape</h2>
  *
- * <p>Server to client: a screen appears, a screen goes away, a screen navigates.
- * Client to server: place, remove, navigate.
+ * <p>Server to client: a screen appears, a screen goes away, a screen navigates,
+ * a screen moved, and the owner reports where the video is.
+ * Client to server: place, remove, navigate, move, and the same playback
+ * report - which only the owner may send.
  *
  * <p>The client does not choose the screen id. It puts a URL and a position on
  * the table and the server answers with an id, because an id a client picks is
@@ -173,6 +175,63 @@ public final class Payloads {
         }
     }
 
+    /**
+     * Client to server: where my shared screen's video is, and whether it plays.
+     *
+     * <p>One browser per client, so two people watching the same screen are two
+     * separate sessions that drift apart. This is the owner reporting its own
+     * browser, once every {@link PlaybackSync#REPORT_INTERVAL_MILLIS}, and the
+     * server deciding whether that is worth passing on. It is deliberately the
+     * only party that may send it - a viewer asking to be moved is a viewer
+     * taking the wheel, and the server refuses with the same "not-your-screen"
+     * it uses everywhere else.
+     *
+     * <p>{@code time} is a raw double from a packet and ends up in a script, so
+     * {@link PlaybackSync#checkTime} exists to keep NaN out of a browser.
+     */
+    public record Playback(UUID screenId, double time, boolean paused)
+            implements CustomPacketPayload {
+
+        public static final Type<Playback> TYPE =
+                new Type<>(Identifier.fromNamespaceAndPath(NS, "playback"));
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, Playback> CODEC = StreamCodec.of(
+                (buf, v) -> {
+                    buf.writeUUID(v.screenId);
+                    buf.writeDouble(v.time);
+                    buf.writeBoolean(v.paused);
+                },
+                buf -> new Playback(buf.readUUID(), buf.readDouble(), buf.readBoolean()));
+
+        @Override
+        public Type<Playback> type() {
+            return TYPE;
+        }
+    }
+
+    /** Server to client: the owner says where the video is. Follow it. */
+    public record ScreenPlayback(UUID screenId, double time, boolean paused)
+            implements CustomPacketPayload {
+
+        public static final Type<ScreenPlayback> TYPE =
+                new Type<>(Identifier.fromNamespaceAndPath(NS, "screen_playback"));
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, ScreenPlayback> CODEC =
+                StreamCodec.of(
+                        (buf, v) -> {
+                            buf.writeUUID(v.screenId);
+                            buf.writeDouble(v.time);
+                            buf.writeBoolean(v.paused);
+                        },
+                        buf -> new ScreenPlayback(buf.readUUID(), buf.readDouble(),
+                                buf.readBoolean()));
+
+        @Override
+        public Type<ScreenPlayback> type() {
+            return TYPE;
+        }
+    }
+
     /** Server to client: here is a screen, at this exact place. */
     public record ScreenAdded(UUID screenId, String owner, String url, String dimension,
                               double x, double y, double z,
@@ -266,6 +325,8 @@ public final class Payloads {
         PayloadTypeRegistryAccess.serverbound(Remove.TYPE, Remove.CODEC);
         PayloadTypeRegistryAccess.serverbound(Navigate.TYPE, Navigate.CODEC);
         PayloadTypeRegistryAccess.serverbound(Move.TYPE, Move.CODEC);
+        PayloadTypeRegistryAccess.serverbound(Playback.TYPE, Playback.CODEC);
+        PayloadTypeRegistryAccess.clientbound(ScreenPlayback.TYPE, ScreenPlayback.CODEC);
         PayloadTypeRegistryAccess.clientbound(ScreenAdded.TYPE, ScreenAdded.CODEC);
         PayloadTypeRegistryAccess.clientbound(ScreenRemoved.TYPE, ScreenRemoved.CODEC);
         PayloadTypeRegistryAccess.clientbound(ScreenNavigate.TYPE, ScreenNavigate.CODEC);

@@ -13,17 +13,31 @@
 | Branch | id | Estado |
 |---|---|---|
 | `port/26.3` | `screenmine` | **A linha de trabalho.** Client-only, rede inactiva por defeito. |
-| `multiplayer` | `screenmine_mp` | **Congelada.** Só tem o plano. |
+| `multiplayer` | `screenmine_mp` | **A funcionar entre dois jogadores.** Passos 1–4 feitos; ver `docs/multiplayer-plan.md`. |
 
-Merges só `port/26.3` → `multiplayer`, nunca ao contrário. A multiplayer só
-descongela quando o bug A estiver fechado. Politica completa no `AGENTS.md`;
-plano e decisões em `docs/multiplayer-plan.md` (na branch `multiplayer`).
+Merges só `port/26.3` → `multiplayer`, nunca ao contrário. Politica completa no
+`AGENTS.md`; plano e decisões em `docs/multiplayer-plan.md`.
 
 Os dois `breaks` mútuos estão declarados e `node tools/check-breaks.mjs` dá
-14/14. O que isso **não** prova é que o Fabric recusa os dois no arranque: isso
+15/15. O que isso **não** prova é que o Fabric recusa os dois no arranque: isso
 é o `ModSolver` e precisa de um arranque real.
 
-**Última actualização:** 2026-10-16 · **Branch:** `spike/codecs` · **Compila:** sim, 0 erros
+### Notas para mais tarde
+
+- **O ficheiro de config nunca é actualizado.** `Settings` escreve o template
+  só quando o ficheiro não existe, portanto quem correu uma build antiga nunca
+  vê as chaves novas — foi o que aconteceu no PC de teste, onde
+  `mp.acceptRemote` não aparecia. Duas formas de resolver, nenhuma feita:
+  acrescentar as chaves em falta ao arrancar sem tocar nas que o jogador pôs, ou
+  pôr as opções dentro do jogo.
+- **Compatibilidade com um mod de configuração dentro do Minecraft** (ModMenu ou
+  equivalente). Hoje a única superfície de configuração é o ficheiro de texto, e
+  o ModMenu mostra o mod mas não as opções dele.
+- **O id do servidor aparece como `?` nos logs do multiplayer**, porque
+  `currentServerId` devolve `single:<nome>` para o servidor integrado e isso
+  não está a ser registado. Cosmético, mas atrapalha a leitura.
+
+**Última actualização:** 2026-10-17 · **Branch:** `multiplayer` · **Compila:** sim, 0 erros
 
 ---
 

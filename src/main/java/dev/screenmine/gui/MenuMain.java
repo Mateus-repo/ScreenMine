@@ -107,7 +107,11 @@ public final class MenuMain extends Screen {
         // making one locally and hoping the two agree. One code path, so there
         // is nothing to keep in step.
         Button share = add(x, y, Lang.t("menu.share"), b ->
-            minecraft.gui.setScreen(new UrlEntry("screenmine_mp", url -> {
+            // A real URL, not the mod id. With "screenmine_mp" in the box the
+            // player typed their address after it and UrlEntry turned the lot
+            // into a DuckDuckGo search - which the server then refused as not
+            // on the allowlist, so it looked like the feature was broken.
+            minecraft.gui.setScreen(new UrlEntry(Cfg.DEFAULT_URL, url -> {
                 if (dev.screenmine.mp.SharedScreensClient.place(minecraft, url)) {
                     minecraft.gui.setScreen(null);
                 }

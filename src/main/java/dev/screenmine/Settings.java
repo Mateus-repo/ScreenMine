@@ -53,6 +53,11 @@ public final class Settings {
             server.host=
             server.port=23481
             #
+            # Shared screens. Off by default: with this at 0 the mod ignores
+            # screens that other players placed, so joining a server cannot make
+            # this machine open a page somebody else chose.
+            mp.acceptRemote=0
+            #
             # Diagnostics. Set debug.codecs to 1 and load any page to have the
             # browser report which media codecs it can decode, into latest.log
             # under the ScreenMine/codecs logger.

@@ -194,6 +194,33 @@ public final class ScreenRules {
     }
 
     /**
+     * Whether a URL a remote browser is about to open is on the allowlist.
+     *
+     * <p>The same rule as {@link #hostAllowed}, reached from the URL rather than
+     * from a host, so the client guard and the server check cannot drift apart.
+     *
+     * <p>Fail-closed for anything that is not https. A remote browser has no
+     * business being sent to a file:, data: or about: URL by a page another
+     * player chose. Those schemes are fine on the way in - the test page is a
+     * file - and not on the way out of a shared screen.
+     */
+    public static boolean hostAllowedForNavigation(String url) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+        URI uri;
+        try {
+            uri = URI.create(url.trim());
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
+        if (!"https".equalsIgnoreCase(uri.getScheme())) {
+            return false;
+        }
+        return hostAllowed(uri.getHost(), DEFAULT_ALLOWED_HOSTS);
+    }
+
+    /**
      * Whether the screen is close enough to the player placing it.
      *
      * <p>Three dimensions, not one, and each is refused for a different reason:

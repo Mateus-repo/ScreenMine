@@ -61,6 +61,58 @@ public final class ScreenWorld {
         return screen;
     }
 
+    /**
+     * Puts a screen where the server said, not where the viewer is standing.
+     *
+     * <p>{@link #attach} is the opposite: it works out a position from the
+     * receiver's own eyes, because a screen watched alone belongs in front of
+     * whoever is watching. A shared screen belongs where the person who placed
+     * it put it, or two people standing next to each other see different
+     * worlds, and "the screen is in front of me" stops meaning anything the
+     * moment there is anyone else in the world.
+     *
+     * <p>Absolute, and refused in another dimension. That refusal is here as
+     * well as on the server because the server cannot make this client render
+     * anything. It can stop telling us about a screen; only we decide what
+     * happens to what we were told.
+     *
+     * @return the screen, or null when this player is not in that dimension
+     */
+    public PlacedScreen attachRemote(String streamId, String url, String dimension,
+                                     double x, double y, double z, float yaw, float width) {
+        PlacedScreen existing = placed.get(streamId);
+        if (existing != null) {
+            existing.dimension = dimension;
+            existing.pos = new Vec3(x, y, z);
+            existing.yaw = yaw;
+            if (url != null && !url.isBlank()
+                    && !BrowserInstance.sameVideo(existing.browser.url(), url)) {
+                existing.browser.navigate(url, true);
+            }
+            return existing;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null) {
+            return null;
+        }
+        if (!dimension.equals(dimensionOf(mc))) {
+            // Not here. Not a failure - the screen is fine, it is elsewhere. It
+            // gets made if this player ever goes there.
+            return null;
+        }
+        BrowserInstance browser = new BrowserInstance(streamId, url);
+        PlacedScreen screen = new PlacedScreen(streamId, browser, dimension,
+                new Vec3(x, y, z), yaw);
+        screen.width = width;
+        // A shared screen is somebody else's page. It arrives silent. The volume
+        // falloff already multiplies by !muted, so one field is the feature.
+        screen.muted = true;
+        screen.volume = 0;
+        browser.setRemote(true);
+        placed.put(streamId, screen);
+        return screen;
+    }
+
     public void detach(String streamId) {
         PlacedScreen screen = placed.remove(streamId);
         if (screen != null) {

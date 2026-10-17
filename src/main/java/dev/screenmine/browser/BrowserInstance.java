@@ -199,6 +199,26 @@ private volatile boolean closed;
     private int surfaceHeight = Cfg.BROWSER_HEIGHT;
 
     /** Last gain actually pushed into the page, 0..1; -1 means "unknown". */
+    /**
+     * Whether this browser shows a page somebody else chose.
+     *
+     * <p>Set by the shared-screen code and read by the navigation guard. A
+     * remote browser is one that arrived over the network, so its navigation is
+     * held to the allowlist even when the server already vetted it - a server
+     * can be wrong, compromised, or a different build.
+     */
+    private volatile boolean remote;
+
+    /** Marks this browser as showing somebody else's page. */
+    public void setRemote(boolean value) {
+        this.remote = value;
+    }
+
+    /** Whether this browser is showing a page that arrived over the network. */
+    public boolean isRemote() {
+        return remote;
+    }
+
     private volatile double appliedGain = -1.0;
     /** Fallback agent injection: frames waited, and whether it already ran. */
     private int agentTicks;
@@ -403,6 +423,45 @@ private volatile boolean closed;
                     self.agentInjected = true;
                     self.injectAgent();
                 }
+            }
+        });
+
+        // Navigation guard for shared screens. onBeforeBrowse gets the browser,
+        // and LIVE already maps browser id to instance, so a request handler on
+        // the shared client can tell whose page this is. Only remote browsers are
+        // held to the allowlist; the owner's own screens are untouched.
+        //
+        // Checked in the 26.3 jcef-api: CefRequestHandler.onBeforeBrowse exists
+        // and CefRequestHandlerAdapter supplies a no-op. Returning true cancels
+        // the navigation.
+        //
+        // The limit worth naming: this covers the main frame and its redirects,
+        // because that is all onBeforeBrowse sees. Images, scripts and other
+        // sub-resources go through onResourceRequest, which is not wired up.
+        // A page on the allowlist that pulls scripts from elsewhere is not
+        // blocked by this, and the plan says to say so rather than imply
+        // otherwise.
+        client.addRequestHandler(new org.cef.handler.CefRequestHandlerAdapter() {
+            @Override
+            public boolean onBeforeBrowse(org.cef.browser.CefBrowser b,
+                                          org.cef.browser.CefFrame frame,
+                                          org.cef.network.CefRequest request,
+                                          boolean isNavigation, boolean isRedirect) {
+                BrowserInstance self = lookup(b);
+                if (self == null || !self.isRemote()) {
+                    return false;
+                }
+                String url = request.getURL();
+                if (url == null || url.startsWith("about:")
+                        || url.startsWith("data:") || url.startsWith("devtools:")) {
+                    return false;
+                }
+                if (dev.screenmine.mp.ScreenRules.hostAllowedForNavigation(url)) {
+                    return false;
+                }
+                LOGGER.warn("NAV blocked for remote screen {}: {} is not on the allowlist",
+                        self.streamId, url);
+                return true;
             }
         });
 

@@ -117,6 +117,9 @@ public final class ScreenMineClient implements ClientModInitializer {
 
         CodecProbe.loadSetting();
         BrowserInstance.installCrashLogging();
+        // The client half of shared screens. Only makes screens when the player
+        // has asked for it with mp.acceptRemote.
+        dev.screenmine.mp.SharedScreensClient.register(world);
         // Payload types are NOT registered here. The main entrypoint runs on
         // both sides and registers them; doing it again from the client
         // entrypoint registered every type twice and crashed the game at

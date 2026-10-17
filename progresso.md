@@ -36,6 +36,23 @@ Os dois `breaks` mútuos estão declarados e `node tools/check-breaks.mjs` dá
 - **O id do servidor aparece como `?` nos logs do multiplayer**, porque
   `currentServerId` devolve `single:<nome>` para o servidor integrado e isso
   não está a ser registado. Cosmético, mas atrapalha a leitura.
+- **Os load handlers do CEF nunca disparam.** `installHandlersOnce` regista
+  `onLoadEnd`, `onLoadError` e `onLoadStart` no `CefClient` partilhado e o log
+  não dá nenhum erro — mas **nem uma única vez** apareceu um `ONLOADEND`, um
+  `LOAD ERROR` ou um `LOAD START`, nos dois clientes, em nenhum arranque. A
+  página carrega na mesma (o `pumpAgent` injecta o agente por tentativa), mas
+  isso quer dizer que o(handler do CEF que o MCEF dá ao browser não é aquele em
+  que estamos a registar. **Enquanto isto não for percebido, nenhum diagnóstico
+  posto em `CefLoadHandlerAdapter` serve para alguma coisa** — incluindo o
+  `LOAD ERROR` que se juntou no `d00159f`. A via que funciona é sondar o
+  browser: `pumpAgent` a perguntar `getURL()` e `getFrameIdentifiers()`.
+- **O primeiro `loadURL` é deitado fora com frequência.** Nos dois clientes às
+  11:22: `CREATE` e `NAVIGATE` aparecem, e dois segundos depois o browser ainda
+  está em `about:blank`. O código via isso, escrevia `LOAD FAILED: ... still on
+  about:blank` e não fazia nada — o ecrã ficava cinzento até o jogador mexer no
+  menu por acaso. Agora repete-se a navegação de segundo a segundo, até 6 vezes,
+  com `NAV RETRY n/6` e `NAV recovered` / `NAV GAVE UP`. Corrigido, **por provar
+  em jogo**.
 
 **Última actualização:** 2026-10-17 · **Branch:** `multiplayer` · **Compila:** sim, 0 erros
 

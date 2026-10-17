@@ -223,6 +223,18 @@ private volatile boolean closed;
     /** Fallback agent injection: frames waited, and whether it already ran. */
     private int agentTicks;
     private volatile boolean agentInjected;
+
+    /** Ticks in a row the browser has been sitting on about:blank. */
+    private int blankTicks;
+
+    /** How many times loadURL has been re-issued for the current target. */
+    private int navRetries;
+
+    /** Ticks between navigation retries, about a second. */
+    private static final int NAV_RETRY_TICKS = 20;
+
+    /** How many times to re-issue loadURL before giving up and saying so. */
+    private static final int MAX_NAV_RETRIES = 6;
     /** Codec support is per Chromium build, so the probe runs once per browser. */
     private volatile boolean probeRan;
 
@@ -293,6 +305,8 @@ private volatile boolean closed;
         LIVE.put(browser.getCefBrowser().getIdentifier(), this);
         agentInjected = false;
         agentTicks = 0;
+        blankTicks = 0;
+        navRetries = 0;
         // Only now, with the handlers registered and the id mapped, go to the
         // real page. currentUrl is restored because navigate() would clear it.
         currentUrl = target;
@@ -336,11 +350,58 @@ private volatile boolean closed;
                 || "about:blank".equals(actual);
     }
 
+    /**
+     * Re-issues the navigation while the browser stays on about:blank.
+     *
+     * <p>The one navigation that {@code loadURL} performs right after
+     * {@code createBrowser} is dropped often enough to matter. Both clients in the
+     * 2026-10-17 11:22 run logged it: the screen appeared, CREATE and NAVIGATE
+     * were written, and two seconds later the browser was still on about:blank.
+     * Nothing was wrong with the URL, the allowlist or the distance - the request
+     * simply never arrived. The old code noticed this and logged
+     * "LOAD FAILED: ... still on about:blank", then did nothing about it, so the
+     * screen stayed grey until the player happened to nudge the menu.
+     *
+     * <p>So: ask again. Once a second, up to {@link #MAX_NAV_RETRIES} times,
+     * then give up and say so rather than leaving a grey plate unexplained. Reset
+     * the moment the browser leaves about:blank, and log the recovery, because
+     * "it worked after a retry" is the thing worth knowing about JCEF here.
+     */
+    private void retryBlankNavigation(CefBrowser cef) {
+        if (!isStillBlank(cef)) {
+            if (navRetries > 0) {
+                LOGGER.info("NAV recovered for {} after {} retr{}",
+                        streamId, navRetries, navRetries == 1 ? "y" : "ies");
+            }
+            blankTicks = 0;
+            navRetries = 0;
+            return;
+        }
+        if (currentUrl == null || currentUrl.isEmpty()) {
+            return;
+        }
+        if (++blankTicks % NAV_RETRY_TICKS != 0) {
+            return;
+        }
+        if (navRetries >= MAX_NAV_RETRIES) {
+            if (navRetries == MAX_NAV_RETRIES) {
+                navRetries++;
+                LOGGER.error("NAV GAVE UP for {} after {} retries; still on {} so the screen"
+                        + " is grey and will stay grey", streamId, MAX_NAV_RETRIES, cef.getURL());
+            }
+            return;
+        }
+        navRetries++;
+        LOGGER.info("NAV RETRY {}/{} for {}", navRetries, MAX_NAV_RETRIES, streamId);
+        cef.loadURL(resolve(currentUrl));
+    }
+
     public void pumpAgent() {
         CefBrowser cef = cef();
         if (cef == null) {
             return;
         }
+        retryBlankNavigation(cef);
         if (!agentInjected) {
             if (++agentTicks < AGENT_TICKS) {
                 return;
@@ -352,13 +413,11 @@ private volatile boolean closed;
             // whole bug: the 12:09 run asked for a data: URL, the browser stayed
             // on about:blank, and the log said "NAVIGATE to screenmine:test" so
             // nothing looked wrong. An agent that reports href=about:blank after
-            // being asked for something else is the signature of a failed load.
+            // being asked for something else is the signature of a dropped
+            // navigation. retryBlankNavigation is what acts on it; this line is
+            // only the record.
             LOGGER.info("AGENT injected by retry; asked={} browser-has={}",
                     currentUrl, cef.getURL());
-            if (isStillBlank(cef)) {
-                LOGGER.error("LOAD FAILED: asked for {} but the browser is still on about:blank,"
-                        + " so nothing was ever painted and the screen stays grey", currentUrl);
-            }
             return;
         }
         if (++agentTicks < FRAME_WATCH_TICKS) {
@@ -1256,6 +1315,8 @@ private volatile boolean closed;
         browser = null;
         agentInjected = false;
         agentTicks = 0;
+        blankTicks = 0;
+        navRetries = 0;
         LOGGER.info("released the browser for {}; it will be made again if the player comes back",
                 streamId);
     }

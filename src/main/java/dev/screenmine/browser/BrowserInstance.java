@@ -415,6 +415,35 @@ private volatile boolean closed;
         handlersInstalled = true;
 
         client.addLoadHandler(new CefLoadHandlerAdapter() {
+            /**
+             * A load that failed, with the reason.
+             *
+             * <p>Added because a shared screen came up black on one machine and
+             * perfectly on another, and the log said nothing about it: there was
+             * no onLoadError anywhere, so a refused navigation, a DNS failure and
+             * a timeout all looked the same as "still loading". This names the
+             * error code and the failed URL.
+             */
+            @Override
+            public void onLoadError(org.cef.browser.CefBrowser b, org.cef.browser.CefFrame frame,
+                                    org.cef.handler.CefLoadHandler.ErrorCode code,
+                                    String errorText, String failedUrl) {
+                BrowserInstance self = lookup(b);
+                String who = self == null ? "unknown" : self.streamId;
+                String kind = self != null && self.isRemote() ? " REMOTE" : "";
+                LOGGER.warn("LOAD ERROR{} screen={} code={} {} url={}",
+                        kind, who, code, errorText, failedUrl);
+            }
+
+            @Override
+            public void onLoadStart(org.cef.browser.CefBrowser b, org.cef.browser.CefFrame frame,
+                                    org.cef.network.CefRequest.TransitionType type) {
+                BrowserInstance self = lookup(b);
+                if (self != null && self.isRemote()) {
+                    LOGGER.info("LOAD START remote screen={} url={}", self.streamId, frame.getURL());
+                }
+            }
+
             @Override
             public void onLoadEnd(CefBrowser b, CefFrame frame, int httpStatusCode) {
                 BrowserInstance self = lookup(b);
@@ -1128,6 +1157,39 @@ private volatile boolean closed;
      * <p>Installed once. It chains to whatever handler was already there, so it
      * does not swallow the game's own reporting.
      */
+    /**
+     * Says once why this browser has nothing to show.
+     *
+     * <p>A shared screen came up black on one machine and perfectly on another,
+     * and the log said nothing about it. Three different things can leave a
+     * screen black and none of them were written down: no browser at all because
+     * it was out of range, a browser that had not painted yet, or a browser
+     * whose navigation was refused. Now the reason is named.
+     *
+     * <p>Only when it changes. This is called every frame and a line per frame
+     * would bury everything else in the log.
+     *
+     * @param withinRange whether the renderer considers this screen close enough
+     */
+    public void logWhyNoFrame(boolean withinRange) {
+        String reason;
+        if (browser == null) {
+            reason = withinRange
+                    ? "no browser yet though it is within range: Chromium is not ready"
+                    : "no browser: out of range, past " + (int) Cfg.REMOTE_SPAWN_DISTANCE + " blocks";
+        } else if (!ready()) {
+            reason = "browser exists but has painted no frame yet";
+        } else {
+            reason = "browser is ready but there is no texture";
+        }
+        if (!reason.equals(lastEmptyReason)) {
+            lastEmptyReason = reason;
+            LOGGER.info("screen {} shows nothing: {}", streamId, reason);
+        }
+    }
+
+    /** What {@link #logWhyNoFrame} last said, so it only logs on a change. */
+    private volatile String lastEmptyReason;
     public static void installCrashLogging() {
         Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {

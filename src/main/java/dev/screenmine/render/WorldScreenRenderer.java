@@ -90,6 +90,7 @@ public final class WorldScreenRenderer {
                 if (distance > Cfg.REMOTE_RELEASE_DISTANCE) {
                     // Well out of reach. Give the Chromium back rather than
                     // holding one for a screen nobody can see.
+                    screen.browser.logWhyNoFrame(false);
                     if (screen.browser.ready()) {
                         // release() logs, with the stream id; the renderer has no
                         // logger of its own and should not grow one for a line.
@@ -103,6 +104,7 @@ public final class WorldScreenRenderer {
                     if (screen.browser.ready() && remoteBudget > 0) {
                         remoteBudget--;
                     } else if (!screen.browser.ready()) {
+                        screen.browser.logWhyNoFrame(true);
                         continue;
                     }
                 } else if (!screen.browser.ready()) {
@@ -120,6 +122,13 @@ public final class WorldScreenRenderer {
                 }
             }
             // The browser is created lazily; until it has a frame we show the plate.
+            if (screen.browser.isRemote()) {
+                // Name the reason rather than leaving a black plate to be
+                // guessed at: out of range, Chromium not ready, or a refused
+                // navigation are three different problems with three different
+                // fixes.
+                screen.browser.logWhyNoFrame(true);
+            }
             if (!screen.browser.ensureCreated() || !screen.browser.ready()) {
                 place(pose, cam, screen);
                 drawSolid(ctx, pose, screen.width, screen.height(), 16, 16, 20, 220, -1, 0, 0);

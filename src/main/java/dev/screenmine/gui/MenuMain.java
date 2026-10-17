@@ -102,6 +102,24 @@ public final class MenuMain extends Screen {
         });
         y += H + GAP;
 
+        // Shared screens. The owner sees their own screen the same way everyone
+        // else does - through the server's ScreenAdded echo - rather than by
+        // making one locally and hoping the two agree. One code path, so there
+        // is nothing to keep in step.
+        Button share = add(x, y, Lang.t("menu.share"), b ->
+            minecraft.gui.setScreen(new UrlEntry("screenmine_mp", url -> {
+                if (dev.screenmine.mp.SharedScreensClient.place(minecraft, url)) {
+                    minecraft.gui.setScreen(null);
+                }
+            }, this)));
+        y += H + GAP;
+
+        Button unshare = add(x, y, Lang.t("menu.share.remove"), b -> {
+            dev.screenmine.mp.SharedScreensClient.removeMine(minecraft);
+        });
+        unshare.active = dev.screenmine.mp.SharedScreensClient.hasMine(minecraft);
+        y += H + GAP;
+
         if (mine.isEmpty()) {
             Button none = add(x, y, Lang.t("menu.screens.none"), b -> { });
             none.active = false;

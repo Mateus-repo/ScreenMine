@@ -119,6 +119,10 @@ public final class Lang {
         put("menu.title", "ScreenMine", "ScreenMine");
         put("menu.spawn", "Spawn a screen", "Заспавнить экран");
         put("menu.testpage", "Spawn the keyboard test page", "Заспавнить страницу теста клавиатуры");
+        put("menu.share", "Place a shared screen", "Поставить общий экран");
+        put("menu.share.remove", "Remove my shared screens", "Убрать свои общие экраны");
+        put("chat.share.off", "mp.acceptRemote is 0, so shared screens are off. Set it to 1 in config/screenmine_mp.properties.", "mp.acceptRemote = 0, общие экраны выключены.");
+        put("chat.share.none", "You have no shared screens", "У тебя нет общих экранов");
         put("menu.screens.none", "— no screens placed —", "— экранов нет —");
         put("menu.screens.aimed", "  ← aimed", "  ← наведён");
         put("menu.screens.page", "%d/%d", "%d/%d");

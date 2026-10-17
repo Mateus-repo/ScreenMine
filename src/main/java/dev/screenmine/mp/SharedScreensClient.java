@@ -1,5 +1,7 @@
 package dev.screenmine.mp;
 
+import dev.screenmine.Cfg;
+import dev.screenmine.Lang;
 import dev.screenmine.Settings;
 import dev.screenmine.world.PlacedScreen;
 import dev.screenmine.world.ScreenWorld;
@@ -30,6 +32,89 @@ public final class SharedScreensClient {
         return Settings.getBool("mp.acceptRemote", false);
     }
 
+    /**
+     * Asks the server for a shared screen at the place this player is looking.
+     *
+     * <p>Nothing is created locally. The screen appears when the server answers
+     * with ScreenAdded, which it sends to the placer too - so the person who
+     * placed it and everybody watching get the identical screen from the
+     * identical code path, with the server's absolute position. Making one
+     * locally and hoping the two agree is how a client ends up showing a screen
+     * the server never agreed to.
+     *
+     * <p>That is also why the owner needs {@code mp.acceptRemote}: their own
+     * screen arrives through the same receiver as everybody else's. The flag is
+     * about what this client will render, not about who sent it.
+     *
+     * @return true when the request went out; false with a chat line saying why
+     */
+    public static boolean place(net.minecraft.client.Minecraft mc, String url) {
+        if (!acceptRemote()) {
+            say(mc, Lang.t("chat.share.off"));
+            return false;
+        }
+        if (mc.player == null || mc.level == null) {
+            return false;
+        }
+        // Where the player is looking, in blocks, so the screen lands where they
+        // are pointing rather than at their feet.
+        var eye = mc.player.getEyePosition();
+        var look = mc.player.getLookAngle();
+        var pos = eye.add(look.scale(Cfg.SPAWN_DISTANCE));
+        float yaw = mc.player.getYRot() + 180.0f;
+        String dimension = mc.level.dimension().identifier().toString();
+
+        var payload = new Payloads.Place(url == null ? "" : url.trim(), dimension,
+                pos.x, pos.y, pos.z, yaw, Cfg.DEFAULT_WIDTH, (float) (Cfg.DEFAULT_WIDTH * 9.0 / 16.0));
+        ClientPlayNetworking.send(payload);
+        LOG.info("asked to place a shared screen on {}", url);
+        return true;
+    }
+
+    /** Takes down every shared screen this player owns. */
+    public static void removeMine(net.minecraft.client.Minecraft mc) {
+        for (java.util.UUID id : mineOwned()) {
+            ClientPlayNetworking.send(new Payloads.Remove(id));
+            LOG.info("asked to remove shared screen {}", id);
+        }
+        if (mineOwned().isEmpty()) {
+            say(mc, Lang.t("chat.share.none"));
+        }
+    }
+
+    /** Whether this player owns any shared screen right now. */
+    public static boolean hasMine(net.minecraft.client.Minecraft mc) {
+        return !mineOwned().isEmpty();
+    }
+
+    private static java.util.List<java.util.UUID> mineOwned() {
+        java.util.List<java.util.UUID> out = new java.util.ArrayList<>();
+        String me = meName();
+        if (me == null) {
+            return out;
+        }
+        for (java.util.Map.Entry<java.util.UUID, String> e : OWNED_BY_NAME.entrySet()) {
+            if (me.equals(e.getValue())) {
+                out.add(e.getKey());
+            }
+        }
+        return out;
+    }
+
+    private static String meName() {
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        return mc.getConnection() == null ? null : mc.getConnection().getLocalGameProfile().name();
+    }
+
+    /** Screen id to owner name, for "remove all of mine". */
+    private static final java.util.Map<java.util.UUID, String> OWNED_BY_NAME =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static void say(net.minecraft.client.Minecraft mc, String message) {
+        dev.screenmine.ScreenMineClient.chat(
+                net.minecraft.network.chat.Component.literal(message));
+    }
+
     /** Registers the three server-to-client receivers. */
     public static void register(ScreenWorld world) {
         ClientPlayNetworking.registerGlobalReceiver(Payloads.ScreenAdded.TYPE, (added, context) -> {
@@ -47,6 +132,7 @@ public final class SharedScreensClient {
                 LOG.warn("remote screen {} refused: {}", added.screenId(), why);
                 return;
             }
+            OWNED_BY_NAME.put(added.screenId(), added.owner());
             PlacedScreen screen = world.attachRemote(
                     added.screenId().toString(), added.url(), added.dimension(),
                     added.x(), added.y(), added.z(), added.yaw(), added.width());
@@ -63,6 +149,7 @@ public final class SharedScreensClient {
 
         ClientPlayNetworking.registerGlobalReceiver(Payloads.ScreenRemoved.TYPE, (removed, context) -> {
             world.detach(removed.screenId().toString());
+            OWNED_BY_NAME.remove(removed.screenId());
             LOG.info("remote screen {} removed", removed.screenId());
         });
 

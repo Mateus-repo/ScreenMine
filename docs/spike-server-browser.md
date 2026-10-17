@@ -172,17 +172,76 @@ Montá-la daria espaço para sempre. Mas:
   ou montá-la mal é perda real;
 - precisa de root.
 
-### 6.3 Segurança — isto mudou o que se disse antes
+### 6.3 Segurança — o túnel está a expor o servidor à internet
 
-Duas coisas nesta máquina que não estavam no radar:
+Isto é prioridade acima do spike e foi medido, não suposto.
 
-- **`playitd` está a correr.** É um túnel que expõe portas locais à internet.
-- **Tailscale está activo.**
+**Prova de que é alcançável de fora:**
 
-O Minecraft escuta em `*:25565`, ou seja, em todas as interfaces. Com o playit
-a correr, **esta máquina pode estar alcançável pela internet**, e não só pela
-LAN. Isto contraria o que se assumia — que `online-mode=false` e
-`white-list=false` estavam protectedos por estarem dentro da rede de casa.
+```
+[09:33:33] TheDarkTruther[/84.91.103.164:64015] logged in with entity id 393236
+```
 
-Isto tem de ser confirmado e fechado antes de o mod ir para o GitHub. Não é
-deste spike, mas é mais urgente que o spike.
+`84.91.103.164` é um endereço público. Portanto o `playitd` está a fazer túnel da
+porta 25565 para a internet, e o servidor **não está só na rede de casa**.
+
+**O que está ligado:**
+
+| | |
+|---|---|
+| `online-mode` | **`true`** — e o log mostra o `User Authenticator` a resolver o UUID, ou seja autenticação Mojang a sério. **Só contas pagas entram.** |
+| `enforce-secure-profile` | `true` |
+| `white-list` | **`true`** |
+| `enforce-whitelist` | **`false`** |
+| `white-list.json` | **não existe em lado nenhum** |
+| `server-ip` | vazio → 25565 escuta em todas as interfaces |
+| `banned-players.json` | `[]` |
+| ops | só o dono |
+
+**A whitelist não está a bloquear ninguém.** Está ligada no ficheiro, o ficheiro
+não existe, e mesmo assim as entradas acontecem. Deve ser porque
+`enforce-whitelist=false` é a chave que manda em 26.3 e `white-list=true` é a
+outra — mas isso é uma leitura, não uma certeza, e há de se resolver numa das
+duas maneiras: confirmar qual das duas chaves manda e pôr a certa, ou meter
+gente na whitelist à mão.
+
+**Que portas o túnel expõe não se descobre nesta máquina.** O log do
+`playitd` (que é legível) só regista o canal de controlo e os keepalives — a
+palavra "tunnel" não aparece uma única vez em 1.7 MB. A definição dos túneis
+vive no dashboard da playit, na conta, não em disco.
+
+O que se pode dizer: as únicas portas locais a escutar em todas as interfaces
+são **25565** e **22 (SSH)**. A 25565 está confirmada exposta. **Se o SSH
+também estiver, isso é grave** e é a primeira coisa a ver no dashboard.
+
+**Um erro meu, registado:** a preocupação inicial vinha de ver
+`online-mode=false` e `white-list=false` — mas isso é o servidor de testes no
+Windows. O de Linux está bem neste aspecto. A preocupação certa, e que eu não
+tinha, é o túnel.
+
+### 6.4 O backup de hoje foi verificado
+
+A primeira verificação que fiz deu um susto falso: procurei `region/`,
+`playerdata/` e `stats.dat`, que é o layout de mundo **antes** de 1.21. O 26.3
+não tem nenhum dos três — os chunks estão em `dimensions/<dim>/region/`, os
+jogadores em `players/`, e há ~105 ficheiros `level*.dat`. O backup não tinha
+nada de mal. **Foi o teste que estava errado**, como já aconteceu várias vezes.
+
+Comparando com o mundo vivo, que por definição tem a estrutura certa:
+
+| | |
+|---|---|
+| Directórios da raiz | **idênticos** (`diff` limpo) |
+| Ficheiros de chunk `.mca` | 1419 no backup, 1420 no mundo vivo |
+| `.mca` de zero bytes | **0** |
+| Ficheiros `level*.dat` | 104 vazios — **e também estão vazios no mundo vivo**, são stubs do formato novo |
+| Jogadores | `players/{advancements,data,stats}`, igual ao vivo |
+| Tamanho | 4.1 GB, contra 4.0 GB do de ontem |
+
+A diferença de um chunk é o mundo ter jogado depois das 06:00.
+
+**O que o verificador não prova:** que o Minecraft o consiga carregar. Isto foi
+lido como NBT e comparado com o mundo vivo; a prova a sério é parar o servidor
+e restaurar, e isso não se faz.
+
+**Nada foi apagado.** O backup de ontem continua lá, à espera de ordem.

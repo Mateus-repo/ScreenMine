@@ -15,6 +15,9 @@
   "icon": "assets/screenmine_mp/icon.png",
   "environment": "*",
   "entrypoints": {
+    "main": [
+      "dev.screenmine.mp.ServerEntrypoint"
+    ],
     "client": [
       "dev.screenmine.ScreenMineClient"
     ]

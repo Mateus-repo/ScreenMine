@@ -117,6 +117,11 @@ public final class ScreenMineClient implements ClientModInitializer {
 
         CodecProbe.loadSetting();
         BrowserInstance.installCrashLogging();
+        // The client half of the shared-screen messages. It has to be registered
+        // here as well as on the server: a payload type the other side does not
+        // know is a message the connection drops, which looks exactly like a
+        // network fault and is not one.
+        dev.screenmine.mp.Payloads.registerAll();
 
         LOG.info("ScreenMine ready — network {}", Cfg.networkStatus());
     }

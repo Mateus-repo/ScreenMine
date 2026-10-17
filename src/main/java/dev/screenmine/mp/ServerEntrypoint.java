@@ -30,8 +30,12 @@ public final class ServerEntrypoint implements ModInitializer {
     @Override
     public void onInitialize() {
         Payloads.registerAll();
-        LOG.info("ScreenMine multiplayer: payload types registered on a {} side",
+        ScreenNetwork.register();
+        LOG.info("ScreenMine multiplayer: payload types registered on a {} side; "
+                        + "shared screens on, hosts={}, max {} per player",
                 net.fabricmc.api.EnvType.SERVER == net.fabricmc.loader.api.FabricLoader.getInstance()
-                        .getEnvironmentType() ? "server" : "client");
+                        .getEnvironmentType() ? "server" : "client",
+                ScreenNetwork.hosts(),
+                ScreenRules.MAX_SCREENS_PER_PLAYER);
     }
 }

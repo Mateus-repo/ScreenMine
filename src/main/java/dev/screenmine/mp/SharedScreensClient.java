@@ -28,6 +28,29 @@ public final class SharedScreensClient {
     private SharedScreensClient() {
     }
 
+    /**
+     * Whether an address is one specific video, which is what a shared screen has
+     * to be.
+     *
+     * <p>This is the rule the three failed runs were all missing. A home page, a
+     * channel, a search and a playlist all leave the choice of what to show to
+     * each browser's own session, and two sessions make two choices - so a shared
+     * screen pointed at one of them cannot show the same thing to two people no
+     * matter what the sync does.
+     *
+     * <p>Refused rather than warned, and that is a deliberate opinion: the whole
+     * reason to share a screen is to watch the same thing, so an address that
+     * guarantees you will not is not a worse default, it is the wrong feature.
+     * One line to relax if that is ever wrong.
+     */
+    private static boolean isSpecificVideo(String url) {
+        return !ScreenRules.youtubeVideoId(url).isEmpty();
+    }
+
+    /** Says why, once, on the chat the owner is already looking at. */
+    private static void needsSpecificVideo(net.minecraft.client.Minecraft mc) {
+        say(mc, Lang.t("chat.share.needsvideo"));
+    }
     public static boolean acceptRemote() {
         return Settings.getBool("mp.acceptRemote", false);
     }
@@ -64,6 +87,15 @@ public final class SharedScreensClient {
         float yaw = mc.player.getYRot() + 180.0f;
         String dimension = mc.level.dimension().identifier().toString();
 
+        if (!isSpecificVideo(url)) {
+            // Before anything leaves this machine. The server would accept the
+            // home page happily - it is on the allowlist - and then every client
+            // would show something different, which is the one outcome a shared
+            // screen exists to prevent.
+            needsSpecificVideo(mc);
+            LOG.info("refused to share {}: not one specific video", url);
+            return false;
+        }
         // The share box can hold any YouTube address; what gets shared is the
         // canonical video form, so the owner sees the same thing the viewers will.
         String share = dev.screenmine.mp.ScreenRules.canonicalShareUrl(
@@ -117,6 +149,14 @@ public final class SharedScreensClient {
             return;
         }
         if (!OWNED_BY_NAME.containsKey(id)) {
+            return;
+        }
+        if (!isSpecificVideo(url)) {
+            // Same rule as placing, for the same reason: a shared screen pointed
+            // at a home page sends every browser somewhere different.
+            var mc = net.minecraft.client.Minecraft.getInstance();
+            needsSpecificVideo(mc);
+            LOG.info("refused to navigate {} to {}: not one specific video", id, url);
             return;
         }
         String canonical = ScreenRules.canonicalShareUrl(url == null ? "" : url.trim());

@@ -14,7 +14,17 @@ import net.minecraft.ChatFormatting;
 /** Control panel for one screen: YouTube, playback, size, removal. */
 public final class MenuScreenCtl extends Screen {
 
-    private static final String YOUTUBE = "https://www.youtube.com";
+    /**
+     * Where the "YouTube" button goes.
+     *
+     * <p>A specific video, and it used to be the home page. The 14:51 run found
+     * why that is wrong the expensive way: an owner shared
+     * {@code /embed/TzdAY7QJ-fY}, every client loaded the same video, and then
+     * somebody pressed this button. Twenty-nine seconds of a working shared
+     * screen undone by one line in our own menu, because the home page is the
+     * one address where YouTube decides per session what to show.
+     */
+    private static final String YOUTUBE = Cfg.DEFAULT_SHARE_URL;
 
     private final PlacedScreen screen;
     private final Screen parent;

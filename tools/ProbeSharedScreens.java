@@ -37,6 +37,7 @@ public class ProbeSharedScreens {
         rateLimiter();
         dimension();
         distance();
+        move();
 
         System.out.println();
         System.out.println(pass + " passaram, " + fail + " falharam");
@@ -249,8 +250,64 @@ public class ProbeSharedScreens {
     private static long W() {
         return RateLimiter.WINDOW_MILLIS;
     }
+    private static void move() {
+        section("mover");
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+        SharedScreens s = fresh();
+        ScreenRules.Rejection[] why = new ScreenRules.Rejection[1];
+        place(s, a, 0, 10, 64, 10, 10, 64, 10, DIM);
+        java.util.UUID id = first(s).id();
+        long w = RateLimiter.WINDOW_MILLIS;
+
+        check("o dono move o seu ecra", s.move(id, a, 12, 64, 12, 90,
+                10, 64, 10, w, why) != null, String.valueOf(why[0]));
+        check("a posicao mudou mesmo", first(s).x() == 12.0
+                && first(s).yaw() == 90.0f);
+
+        check("outro jogador nao move", s.move(id, b, 14, 64, 14, 0,
+                14, 64, 14, 2 * w, why) == null
+                && "not-your-screen".equals(why[0].code()), String.valueOf(why[0]));
+
+        // A regra dos 64 blocos tem de valer tambem a mover, senao e' uma
+        // promessa so' a primeira colocacao.
+        check("nao move para longe do jogador", s.move(id, a, 500, 64, 500, 0,
+                10, 64, 10, 3 * w, why) == null
+                && "too-far-from-player".equals(why[0].code()), String.valueOf(why[0]));
+        check("e a posicao nao mudou com a recusa", first(s).x() == 12.0);
+
+        check("nao move para NaN", s.move(id, a, Double.NaN, 64, 12, 0,
+                10, 64, 10, 4 * w, why) == null
+                && "position-not-finite".equals(why[0].code()), String.valueOf(why[0]));
+
+        check("nao move para yaw NaN", s.move(id, a, 12, 64, 12, Float.NaN,
+                10, 64, 10, 5 * w, why) == null
+                && "yaw-not-finite".equals(why[0].code()), String.valueOf(why[0]));
+
+        int allowed = 0;
+        ScreenRules.Rejection last = null;
+        for (int i = 0; i < RateLimiter.MOVE_LIMIT + 5; i++) {
+            // move() devolve null quando RECUSA. A versao anterior da linha
+            // abaixo invertia isso e contava as recusas como passos, o que
+            // dava "25 passaram" com um limite de 20 e parecia bug do produto.
+            SharedScreens.Screen ok = s.move(id, a, 12, 64, 12, 0, 10, 64, 10, 6 * w, why);
+            if (ok != null) {
+                allowed++;
+            } else {
+                last = why[0];
+            }
+        }
+        check("num instante so' passam MOVE_LIMIT movimentos",
+                allowed == RateLimiter.MOVE_LIMIT, allowed + " passaram");
+        check("a seguir e' move-too-fast",
+                last != null && "move-too-fast".equals(last.code()), String.valueOf(last));
+    }
     // ------------------------------------------------------------- ajudantes //
 
+
+    private static SharedScreens.Screen first(SharedScreens s) {
+        return s.all().stream().findFirst().orElseThrow();
+    }
 
     private static SharedScreens fresh() {
         return fresh(ScreenRules.MAX_SCREENS_PER_PLAYER);

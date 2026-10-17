@@ -117,6 +117,62 @@ public final class Payloads {
         }
     }
 
+    /**
+     * Client to server: the owner moved their screen.
+     *
+     * <p>Without this the owner's screen moves for the owner and nobody else,
+     * which is worse than not moving at all: two people in front of the same
+     * screen see it in different places, and the person who placed it cannot
+     * tell whether anybody else can still see it.
+     */
+    public record Move(UUID screenId, double x, double y, double z, float yaw)
+            implements CustomPacketPayload {
+
+        public static final Type<Move> TYPE =
+                new Type<>(Identifier.fromNamespaceAndPath(NS, "move"));
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, Move> CODEC = StreamCodec.of(
+                (buf, v) -> {
+                    buf.writeUUID(v.screenId);
+                    buf.writeDouble(v.x);
+                    buf.writeDouble(v.y);
+                    buf.writeDouble(v.z);
+                    buf.writeFloat(v.yaw);
+                },
+                buf -> new Move(buf.readUUID(), buf.readDouble(), buf.readDouble(),
+                        buf.readDouble(), buf.readFloat()));
+
+        @Override
+        public Type<Move> type() {
+            return TYPE;
+        }
+    }
+
+    /** Server to client: this screen moved. */
+    public record ScreenMove(UUID screenId, double x, double y, double z, float yaw)
+            implements CustomPacketPayload {
+
+        public static final Type<ScreenMove> TYPE =
+                new Type<>(Identifier.fromNamespaceAndPath(NS, "screen_move"));
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, ScreenMove> CODEC =
+                StreamCodec.of(
+                        (buf, v) -> {
+                            buf.writeUUID(v.screenId);
+                            buf.writeDouble(v.x);
+                            buf.writeDouble(v.y);
+                            buf.writeDouble(v.z);
+                            buf.writeFloat(v.yaw);
+                        },
+                        buf -> new ScreenMove(buf.readUUID(), buf.readDouble(),
+                                buf.readDouble(), buf.readDouble(), buf.readFloat()));
+
+        @Override
+        public Type<ScreenMove> type() {
+            return TYPE;
+        }
+    }
+
     /** Server to client: here is a screen, at this exact place. */
     public record ScreenAdded(UUID screenId, String owner, String url, String dimension,
                               double x, double y, double z,
@@ -209,9 +265,11 @@ public final class Payloads {
         PayloadTypeRegistryAccess.serverbound(Place.TYPE, Place.CODEC);
         PayloadTypeRegistryAccess.serverbound(Remove.TYPE, Remove.CODEC);
         PayloadTypeRegistryAccess.serverbound(Navigate.TYPE, Navigate.CODEC);
+        PayloadTypeRegistryAccess.serverbound(Move.TYPE, Move.CODEC);
         PayloadTypeRegistryAccess.clientbound(ScreenAdded.TYPE, ScreenAdded.CODEC);
         PayloadTypeRegistryAccess.clientbound(ScreenRemoved.TYPE, ScreenRemoved.CODEC);
         PayloadTypeRegistryAccess.clientbound(ScreenNavigate.TYPE, ScreenNavigate.CODEC);
+        PayloadTypeRegistryAccess.clientbound(ScreenMove.TYPE, ScreenMove.CODEC);
         PayloadTypeRegistryAccess.logged();
     }
 

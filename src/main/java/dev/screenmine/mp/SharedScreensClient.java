@@ -71,6 +71,24 @@ public final class SharedScreensClient {
         return true;
     }
 
+    /**
+     * Tells the server this player moved one of their shared screens.
+     *
+     * <p>Called from the local move path. Without it the owner's screen moves
+     * for the owner and nobody else: two people in front of the same screen see
+     * it in different places, and the person who placed it cannot tell whether
+     * anybody else can still see it. The local move still happens immediately -
+     * waiting for the server would make dragging feel broken - and the server
+     * decides whether to believe it.
+     */
+    public static void moved(net.minecraft.client.Minecraft mc, java.util.UUID id,
+                             double x, double y, double z, float yaw) {
+        if (!acceptRemote() || !OWNED_BY_NAME.containsKey(id)) {
+            return;
+        }
+        ClientPlayNetworking.send(new Payloads.Move(id, x, y, z, yaw));
+    }
+
     /** Takes down every shared screen this player owns. */
     public static void removeMine(net.minecraft.client.Minecraft mc) {
         for (java.util.UUID id : mineOwned()) {
@@ -168,6 +186,25 @@ public final class SharedScreensClient {
                 screen.browser.navigate(nav.url(), true);
                 LOG.info("remote screen {} now {}", nav.screenId(), nav.url());
             }
+        });
+
+        // Move. Goes through the same path as arrival, because attachRemote
+        // already knows what to do with a screen that is in the right place and
+        // has been told to be somewhere else.
+        ClientPlayNetworking.registerGlobalReceiver(Payloads.ScreenMove.TYPE, (mv, context) -> {
+            if (!acceptRemote()) {
+                return;
+            }
+            PlacedScreen screen = world.get(mv.screenId().toString());
+            if (screen == null) {
+                // Not built here, so nothing to move. attachRemote will place it
+                // correctly when this player walks over there.
+                return;
+            }
+            world.attachRemote(mv.screenId().toString(), screen.browser.url(),
+                    screen.dimension, mv.x(), mv.y(), mv.z(), mv.yaw(), screen.width);
+            LOG.info("remote screen {} moved to {},{},{}", mv.screenId(),
+                    mv.x(), mv.y(), mv.z());
         });
 
         // A shared screen lives exactly as long as its owner. The server removes

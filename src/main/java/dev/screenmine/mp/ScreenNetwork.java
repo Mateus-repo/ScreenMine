@@ -110,6 +110,27 @@ final class ScreenNetwork {
             broadcast(context.server(), new Payloads.ScreenRemoved(gone.id()));
         });
 
+        // Move. Owner only, and re-checked for distance: a screen that was
+        // placed honestly and then dragged across the world is the same problem
+        // as one that was placed there to begin with.
+        ServerPlayNetworking.registerGlobalReceiver(Payloads.Move.TYPE, (move, context) -> {
+            ServerPlayer player = context.player();
+            double px = player.getX();
+            double py = player.getY();
+            double pz = player.getZ();
+            SharedScreens.Screen moved = screens.move(
+                    move.screenId(), player.getUUID(),
+                    move.x(), move.y(), move.z(), move.yaw(),
+                    px, py, pz, context.server().getTickCount() * 50L, scratch);
+            if (moved == null) {
+                refuse(context.server(), player, "move", scratch[0]);
+                return;
+            }
+            log(context.server(), "move", player, moved, null);
+            broadcast(context.server(), new Payloads.ScreenMove(
+                    moved.id(), moved.x(), moved.y(), moved.z(), moved.yaw()));
+        });
+
         // A newcomer is told about everything that already exists. Without this
         // a player who joins late sees an empty world and never learns why.
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
@@ -168,6 +189,10 @@ final class ScreenNetwork {
             if (payload instanceof Payloads.ScreenNavigate nav) {
                 if (ServerPlayNetworking.canSend(p, Payloads.ScreenNavigate.TYPE)) {
                     ServerPlayNetworking.send(p, nav);
+                }
+            } else if (payload instanceof Payloads.ScreenMove mv) {
+                if (ServerPlayNetworking.canSend(p, Payloads.ScreenMove.TYPE)) {
+                    ServerPlayNetworking.send(p, mv);
                 }
             } else if (payload instanceof Payloads.ScreenRemoved rem) {
                 if (ServerPlayNetworking.canSend(p, Payloads.ScreenRemoved.TYPE)) {

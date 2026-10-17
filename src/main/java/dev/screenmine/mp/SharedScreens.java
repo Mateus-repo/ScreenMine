@@ -53,6 +53,7 @@ public final class SharedScreens {
 
     private final Map<UUID, RateLimiter> placeRate = new HashMap<>();
     private final Map<UUID, RateLimiter> navigateRate = new HashMap<>();
+    private final Map<UUID, RateLimiter> moveRate = new HashMap<>();
     private final Map<UUID, RateLimiter> removeRate = new HashMap<>();
 
     public SharedScreens(Set<String> allowedHosts, int maxPerPlayer) {
@@ -177,16 +178,42 @@ public final class SharedScreens {
         return updated;
     }
 
-    /** Moves a screen. Same ownership rules as {@link #navigate}. */
+    /**
+     * Moves a screen.
+     *
+     * <p>Ownership, distance and dimension are all checked again here, not only
+     * at placement. The 64-block rule is a promise about placement and it is
+     * only worth making if it also holds while the screen is being dragged: a
+     * screen placed honestly and then dragged to the far side of the world is
+     * the same problem as one placed there to begin with.
+     *
+     * <p>The dimension is the screen's own. Moving a screen does not move it to
+     * another dimension - that would need a place.
+     *
+     * @return the moved screen, or null when refused
+     */
     public Screen move(UUID screenId, UUID player,
                        double x, double y, double z, float yaw,
-                       ScreenRules.Rejection[] reason) {
+                       double px, double py, double pz,
+                       long nowMillis, ScreenRules.Rejection[] reason) {
         reason[0] = null;
-        if (!isOwner(screenId, player)) {
+        if (!rate(moveRate, player, RateLimiter.MOVE_LIMIT).tryAcquire(nowMillis)) {
+            reason[0] = new ScreenRules.Rejection("move-too-fast",
+                    "at most " + RateLimiter.MOVE_LIMIT + " per "
+                            + (RateLimiter.WINDOW_MILLIS / 1000) + "s");
+            return null;
+        }
+        Screen current = byId.get(screenId);
+        if (current == null || !current.owner().equals(player)) {
             reason[0] = new ScreenRules.Rejection("not-your-screen", null);
             return null;
         }
         ScreenRules.Rejection bad = ScreenRules.checkPosition(x, y, z);
+        if (bad != null) {
+            reason[0] = bad;
+            return null;
+        }
+        bad = ScreenRules.checkDistance(x, y, z, px, py, pz);
         if (bad != null) {
             reason[0] = bad;
             return null;
@@ -196,7 +223,7 @@ public final class SharedScreens {
             reason[0] = bad;
             return null;
         }
-        Screen updated = byId.get(screenId).withPose(x, y, z, yaw);
+        Screen updated = current.withPose(x, y, z, yaw);
         byId.put(screenId, updated);
         return updated;
     }
@@ -248,6 +275,7 @@ public final class SharedScreens {
         placeRate.remove(player);
         navigateRate.remove(player);
         removeRate.remove(player);
+        moveRate.remove(player);
     }
 
     private Screen forget(UUID screenId) {

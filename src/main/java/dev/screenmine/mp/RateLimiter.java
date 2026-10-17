@@ -15,6 +15,7 @@ public final class RateLimiter {
     /** How many messages of one kind a player may send in the window. */
     public static final int PLACE_LIMIT = 2;
     public static final int NAVIGATE_LIMIT = 10;
+    public static final int MOVE_LIMIT = 20;
     public static final int REMOVE_LIMIT = 10;
 
     /** The window, in milliseconds. */

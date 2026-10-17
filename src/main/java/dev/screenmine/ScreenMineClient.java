@@ -310,6 +310,15 @@ public final class ScreenMineClient implements ClientModInitializer {
                 moving.moving = false;
             } else if (currentHit != null) {
                 currentHit.screen().moveDistance = currentHit.distance();
+            // If it is a shared screen, tell the server. Otherwise the owner's
+            // screen moves for the owner alone and nobody else sees where it
+            // went.
+            PlacedScreen moved = currentHit.screen();
+            if (moved.browser.isRemote()) {
+                dev.screenmine.mp.SharedScreensClient.moved(Minecraft.getInstance(),
+                        java.util.UUID.fromString(moved.streamId),
+                        moved.pos.x, moved.pos.y, moved.pos.z, moved.yaw);
+            }
                 currentHit.screen().moving = true;
             }
         }

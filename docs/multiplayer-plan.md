@@ -1,4 +1,4 @@
-﻿# ScreenMine multiplayer — plano
+# ScreenMine multiplayer — plano
 
 Documento de estado. Só texto: nada disto é código feito. O que está descrito
 como "verificado" foi lido nos jars e no código desta branch; o que está
@@ -144,14 +144,82 @@ Jellyfin, ou de qualquer outro site onde o dono esteja autenticado, está
 acessível a quem conseguir mandar um `navigate`. E como o browser é do dono, as
 cookies são as do dono.
 
-- Ecrãs partilhados têm de viver num `CefRequestContext` próprio, com
-  `CefRequestContext.create(...)`.
-- Modo anónimo (`CefRequestHandler` a responder por todas asapanese) é a opção
-  mais segura para conteúdo partilhado: sem cookies, sem `localStorage`, sem
-  nada herdado da máquina.
-- Decidir se o dono pode Promote ecrã próprio ao contexto global. É útil e é
-  exactamente o que transforma isto numa superfície de ataque, por isso tem de
+- Ecrãs abertos por comando remoto têm de usar um `CefRequestContext` **próprio**,
+  com cache e cookies separados dos do dono. Sem isto, a sessão do dono é
+  alcançável por quem mande um `navigate`.
+- Modo anónimo é a opção mais segura para ecrãs partilhados: sem cookies, sem
+  `localStorage`, sem nada herdado da máquina.
+- Decidir se o dono pode promover um ecrã próprio ao contexto global. É útil e
+  é exactamente o que transforma isto numa superfície de ataque, por isso tem de
   ser explícito.
+- Isto tem de ser **opt-in por ecrã**, não global. Com as respostas em (e), cada
+  amigo entra no Jellyfin com a **conta dele**, no browser embebido dele: um
+  contexto partilhado destruiria isso. Contexto anónimo para ecrã de comando,
+  contexto normal para ecrã que o dono declare seu.
+
+#### O que encontrei no mcef-modern sobre contextos separados
+
+Verificado com `javap`, sem implementar nada.
+
+**A capacidade existe. A API do mcef-modern não a expõe.**
+
+O que a API oferece:
+
+```java
+net.dimaskama.mcef.api.MCEFApi
+  MCEFBrowser createBrowser(java.lang.String, boolean)
+```
+
+Dois parâmetros: URL e um booleano. **Não há onde pedir um request context.**
+E o `MCEFApiImpl` não usa essa via — constrói o browser directamente e fixa o
+contexto global:
+
+```
+createBrowser(String, boolean):
+   0: new  net/dimaskama/mcef/impl/MCEFBrowserImpl
+  10: invokestatic  org/cef/browser/CefRequestContext.getGlobalContext
+  13: aconst_null                          // CefBrowserSettings = null
+  14: invokespecial MCEFBrowserImpl.<init>:(CefClient;String;ZCefRequestContext;CefBrowserSettings)V
+```
+
+Portanto hoje **não há como pedir um contexto isolado ao mcef-modern**. Qualquer
+isolamento teria de contornar a API.
+
+Duas vias, ambas confirmadas:
+
+1. **A suportada.** `org.cef.browser.CefBrowserFactory` (no `jcef-api`, não no
+   mod) é `public static`:
+
+   ```java
+   public static CefBrowser create(CefClient, String, boolean, boolean,
+                                   CefRequestContext, CefBrowserSettings)
+   ```
+
+   Aceita contexto. E `CefRequestContext.createContext(CefRequestContextHandler)`
+   é `public static` e devolve um contexto novo e isolado. É a via que eu usaria.
+
+2. **A que depende da implementação.** O jar do mcef-modern traz
+   `org.cef.browser.CustomCefBrowserOsr` como classe **pública**, com construtor
+   que aceita contexto. Funciona, mas é uma classe de implementação: se o
+   mcef-modern a renomear ou tirar numa actualização, isto parte. Não é o que
+   eu escolheria sem necessidade.
+
+**O gancho para modo anónimo existe.** `CefRequestContextHandler` tem um método
+abstracto:
+
+```java
+ResourceRequestHandler getResourceRequestHandler(browser, frame, request,
+        isNavigation, isDownload, requestInitiator, disableDefaultHandling)
+```
+
+Um handler que não sirva nada dá um ecrã partilhado **sem armazenamento nenhum**,
+o que é mais forte do que "jar de cookies separado".
+
+**Um aviso, e é a armadilha habitual:** a assinatura da factory tem **dois
+`boolean` seguidos** e o jar não traz atributo `MethodParameters`, portanto o
+significado deles não se consegue ler. Não adivinhar. É a mesma armadilha dos
+códigos de tecla: probei com códigos GLFW e o resultado não queria dizer nada.
+Confirmar antes de usar.
 
 ### 6. Limites e validação das mensagens
 
@@ -196,36 +264,77 @@ sessões, e o mod só precisa de mandar a todos a mesma URL. Isso encolheria a
 multiplayer para quase nada: sem relógio de playback partilhado, sem
 `state`, sem `seek_by`.
 
-O que tornaria isto unattractive:
-
-- SyncPlay é por **sessão de reprodução**, não por ecrã. Dois amigos a ver coisas
-  diferentes em ecrãs diferentes do mesmo servidor não ficam em sync — o que
-  provavelmente é o caso de uso principal (uma pessoa mostra um vídeo, outra um
-  site).
-- O servidor tem de ter a permissão de SyncPlay activa por utilizador.
-- Continua a precisar de tudo em (c) menos o relógio: a autenticação e a
-  navegação remota não ficam mais fáceis.
-
+O que **não** resolve:
+- **Quem vê o ecrã de quem.** O SyncPlay decide o *quando* de um vídeo. Não tem
+  nada a dizer sobre colocar, mover, ecrãs partilhados ou navegação remota.
+  Continua a precisar de autenticação, lista de domínios e contextos isolados.
+- **Ecrãs com conteúdo diferente.** Um ecrã com um site e outro com um filme
+  continuam a precisar do relógio do mod. O SyncPlay só ajuda quando o grupo
+  está todo no mesmo vídeo — o que, com a resposta (e.3) de que os ecrãs são do
+  dono, é o caso comum, mas não o único.
+Uma objecção que eu tinha levantado estava errada, e vale a pena registar. Disse
+que o SyncPlay sincroniza por sessão de reprodução e não por ecrã, e que por isso
+dois amigos a ver coisas diferentes não ficariam em sincronia. É verdade, e é
+irrelevante: se todos estão a ver a mesma coisa, não há segunda coisa para
+sincronizar. O caso de uso do SyncPlay é exactamente o caso em que ele
+funciona — e o que ele resolve bem é tirar o relógio de playback do mod.
 **O que verificar, quando isto interessar:** nas permissões do utilizador no
-Jellyfin, se o SyncPlay está activo e com que âmbito.
-pergunta original: confirma nas permissões do utilizador_.
+Jellyfin, se o SyncPlay está activo e com que âmbito. E um aviso de segurança:
+com a resposta (e.2), cada amigo entra no Jellyfin com a **conta dele**, o que
+significa distribuir contas do servidor a quem se confia.
 
 ## (e) Três coisas que tenho de saber antes de desenhar isto
 
-1. **Só amigos, ou público?** Muda tudo. Convidados com código e TLS
-   resolve-se num dia. Um serviço público com contas, abuso e moderação não é o
-   mesmo projeto.
+**Respondidas.** São estas respostas que o resto do plano assume. A primeira
+versão é a mais barata e a mais segura; as três são reversíveis.
 
-2. **Browser-de-cada-um chega, ou é preciso transmitir píxeis?** Browser-de-cada-um
-   é barato e resolve páginas públicas. Não resolve o Jellyfin autenticado, uma
-   página atrás de login, nem nada com DRM — para isso era preciso transmitir os
-   píxeis (relay no servidor ou WebRTC), que é outro projeto.
+### 1. Só amigos, com código de convite e TLS
 
-3. **Os ecrãs são do dono da sala, ou de toda a gente?** Se são do dono, o
-   `place` é só do dono e os outros veem. Se são de todos, qualquer um pode
-   colocar e mover um ecrã, e "só o dono manda `navigate`" passa a "qualquer um
-   escolhe o que toda a gente vê" - que é uma regra de permissões completamente
-   diferente.
+Não um serviço público. Isso é outro projeto, com contas, abuso e moderação.
+
+O que isto resolve em (c): a autenticação por convite deixa de ser o item mais
+difícil — é o item mais fácil, porque não há quem se registe sozinho. E TLS é
+obrigatório, não opcional.
+
+O que fica resolvido com isto: nada mais precisa de ser perfeito para uma
+primeira versão. Um erro de navegação afecta um amigo que foi convidado, não o
+público.
+
+### 2. Browser-de-cada-um; cada amigo entra no Jellyfin com a conta dele
+
+Para páginas públicas (YouTube, um site), cada cliente abre a sua própria
+página. **Sem transmitir píxeis.** Relay e WebRTC ficam de fora.
+
+Para o Jellyfin, cada amigo entra com **a sua conta** no seu browser embebido.
+Isto tem uma consequência que tem de estar explícita: **o contexto do browser
+tem de ser isolado por ecrã**, senão as sessões de toda a gente se misturam
+numa só e a conta de um amigo cruza com as dos outros. É o requisito de cookies
+de (c.5), e é a resposta a isto que o torna obrigatório.
+
+O custo honesto desta resposta: cada amigo precisa de ter conta no Jellyfin.
+Significa distribuir contas do servidor a quem se confia. É uma decisão de
+segurança e é tua.
+
+O que fica de fora por já: o Jellyfin autenticado deixa de ser um caso
+impossível e passa a ser um caso normal — cada um vê o que pode ver. O que
+continua impossível é *partilhar* uma sessão autenticada sem dar a conta.
+
+### 3. Os ecrãs são do dono da sala
+
+Só o dono coloca, move, navega e controla. Os outros veem.
+
+É a regra de permissões mais simples que existe: uma pessoa com poder, todos os
+outros sem nenhum. E tem uma vantagem de segurança que vale a pena notar — com
+esta resposta, **ninguém** pode mandar `navigate`, nem para os ecrãs de outro.
+O requisito (c.3) fica "só o dono envia `navigate` e `ctl`" sem nenhum caso
+especial.
+
+Um ecrã de comando remoto, então, é sempre do dono. A lista de domínios (c.4)
+é uma restrição a menos: o dono escolhe o que abre, em qualquer caso. Continua a
+ser necessária — sem ela, um convite comprometido pilota o browser do dono.
+
+**O que isto deixa de fora:** ecrãs que cada amigo coloca para mostrar a sua
+coisa. É uma funcionalidade, não um bug, e fica para depois.
 
 ---
 
@@ -239,9 +348,25 @@ pergunta original: confirma nas permissões do utilizador_.
 | Cifra | **Não existe.** TCP em claro. |
 | Navegação remota controlada | **Não.** `navigate` é aceite de qualquer um. |
 | Lista de domínios | **Não existe.** |
-| Perfil de browser separado | **Não existe.** Todos os ecrãs partilham o contexto global do Chromium. |
+| Perfil de browser separado | **Não existe.** Todos os ecrãs partilham o contexto global do Chromium. Mas a via existe: `CefRequestContext.createContext` + `CefBrowserFactory.create`. Ver (c.5). |
 | Limites de mensagem | **Não existem.** `readLine()` sem teto; a linha crua vai para o log. |
-| SyncPlay | Hipótese, por verificar. |
+| SyncPlay | Não verificado. Resolve o relógio de playback, não quem vê o ecrã de quem. |
 
-Nenhum servidor real deve ser publicado com esta lista como está. O primeiro
-item a fazer é a autenticação; sem ela os restantes são decoração.
+## Ordem de trabalho
+
+A branch `multiplayer` fica **congelada** até o bug A (teclas de edição) estar
+fechado na `port/26.3`. É a linha que já tem prioridade, e qualquer correcção
+entra primeiro lá e só depois é fundida na multiplayer.
+
+Quando a multiplayer arrancar, por esta ordem — a autenticação primeiro, porque
+sem ela os restantes são decoração:
+
+1. Convite + TLS. Só isto já muda a natureza do serviço.
+2. Contexto de browser isolado por ecrã. Sem isto, nenhum amigo pode entrar no
+   Jellyfin sem entrar na sessão do dono.
+3. Só o dono envia `navigate` e `ctl`.
+4. Limites de tamanho e validação de tipos.
+5. Lista de domínios com confirmação no cliente.
+6. Pacote `place` e partilha da colocação.
+
+Nenhum servidor real deve ser publicado antes de 1 e 2 estarem faits e testados.

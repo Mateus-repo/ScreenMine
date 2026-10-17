@@ -64,10 +64,14 @@ public final class SharedScreensClient {
         float yaw = mc.player.getYRot() + 180.0f;
         String dimension = mc.level.dimension().identifier().toString();
 
-        var payload = new Payloads.Place(url == null ? "" : url.trim(), dimension,
+        // The share box can hold any YouTube address; what gets shared is the
+        // canonical video form, so the owner sees the same thing the viewers will.
+        String share = dev.screenmine.mp.ScreenRules.canonicalShareUrl(
+                url == null ? "" : url.trim());
+        var payload = new Payloads.Place(share, dimension,
                 pos.x, pos.y, pos.z, yaw, Cfg.DEFAULT_WIDTH, (float) (Cfg.DEFAULT_WIDTH * 9.0 / 16.0));
         ClientPlayNetworking.send(payload);
-        LOG.info("asked to place a shared screen on {}", url);
+        LOG.info("asked to place a shared screen on {} (shared as {})", url, share);
         return true;
     }
 
@@ -87,6 +91,37 @@ public final class SharedScreensClient {
             return;
         }
         ClientPlayNetworking.send(new Payloads.Move(id, x, y, z, yaw));
+    }
+
+    /**
+     * Tells the server this player pointed one of their shared screens at a new
+     * page.
+     *
+     * <p>Sent over the Minecraft channel, and only for a screen this player owns.
+     * The owner still moves their own browser immediately - waiting for the
+     * server would make changing the video feel broken - and the server decides
+     * whether to believe it, exactly as it does for a move.
+     *
+     * <p>Canonicalised before it goes, so what everybody is sent is the same
+     * address the owner is about to see.
+     */
+    public static void navigated(String streamId, String url) {
+        if (!acceptRemote()) {
+            return;
+        }
+        java.util.UUID id;
+        try {
+            id = java.util.UUID.fromString(streamId);
+        } catch (IllegalArgumentException ex) {
+            // Not a shared screen; nothing to tell the server about.
+            return;
+        }
+        if (!OWNED_BY_NAME.containsKey(id)) {
+            return;
+        }
+        String canonical = ScreenRules.canonicalShareUrl(url == null ? "" : url.trim());
+        ClientPlayNetworking.send(new Payloads.Navigate(id, canonical));
+        LOG.info("asked to navigate shared screen {} to {}", id, canonical);
     }
 
     /** Takes down every shared screen this player owns. */

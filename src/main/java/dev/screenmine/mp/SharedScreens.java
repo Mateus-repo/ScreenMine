@@ -145,6 +145,11 @@ public final class SharedScreens {
         if (bad != null) {
             return bad;
         }
+        // Canonicalised here as well as on the client. The client does it so the
+        // owner sees what is actually being shared; the server does it so that a
+        // modified client sending the plain /watch form cannot put the sidebar
+        // and the radio playlist back and make two viewers diverge.
+        url = ScreenRules.canonicalShareUrl(url == null ? "" : url.trim());
         bad = ScreenRules.checkUrl(url, allowedHosts);
         if (bad != null) {
             return bad;
@@ -193,6 +198,9 @@ public final class SharedScreens {
             reason[0] = new ScreenRules.Rejection("not-your-screen", null);
             return null;
         }
+        // Same reason as in place(): the stored URL is what every client will
+        // open, so it is the server's job to hold the canonical form.
+        url = ScreenRules.canonicalShareUrl(url == null ? "" : url.trim());
         ScreenRules.Rejection bad = ScreenRules.checkUrl(url, allowedHosts);
         if (bad != null) {
             reason[0] = bad;

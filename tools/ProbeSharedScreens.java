@@ -59,6 +59,82 @@ public class ProbeSharedScreens {
         reject("https://evil.example/x", "url-host-not-allowed");
         reject("x".repeat(ScreenRules.MAX_URL_LENGTH + 1), "url-too-long");
         reject("ab", "url-too-short");
+        canonicalShareUrlChecks();
+    }
+
+    /**
+     * The rewrite that makes two browsers agree, taken from WebDisplays.
+     *
+     * <p>Everything here is either "this becomes an /embed/ address" or "this is
+     * left completely alone". The second half matters more: a rule that rewrites
+     * an address it does not understand would quietly mangle somebody's screen.
+     */
+    private static void canonicalShareUrlChecks() {
+        section("URL canonica: a mesma forma para toda a gente");
+        String embed = "https://www.youtube.com/embed/";
+
+        // Becomes the embed form.
+        same("watch", embed + "abc",
+                ScreenRules.canonicalShareUrl("https://www.youtube.com/watch?v=abc"));
+        same("youtu.be", embed + "abc",
+                ScreenRules.canonicalShareUrl("https://youtu.be/abc"));
+        same("m.youtube.com", embed + "abc",
+                ScreenRules.canonicalShareUrl("https://m.youtube.com/watch?v=abc"));
+        same("shorts", embed + "abc",
+                ScreenRules.canonicalShareUrl("https://www.youtube.com/shorts/abc"));
+        same("live", embed + "abc",
+                ScreenRules.canonicalShareUrl("https://www.youtube.com/live/abc"));
+        // The radio playlist that broke the 12:08 run: the list is dropped, which
+        // is the entire point - it is what each session was deciding for itself.
+        same("a radio playlist loses the radio", embed + "abc",
+                ScreenRules.canonicalShareUrl(
+                        "https://www.youtube.com/watch?v=abc&list=RDAabc&start_radio=1"));
+        same("a timestamp is dropped", embed + "abc",
+                ScreenRules.canonicalShareUrl("https://www.youtube.com/watch?v=abc&t=90"));
+        same("already canonical is untouched", embed + "abc",
+                ScreenRules.canonicalShareUrl(embed + "abc"));
+        same("idempotent", ScreenRules.canonicalShareUrl(
+                        ScreenRules.canonicalShareUrl("https://youtu.be/abc")),
+                embed + "abc");
+
+        // Left exactly as they are: there is no single video to agree on.
+        String home = "https://www.youtube.com/";
+        same("the home page is left alone", home, ScreenRules.canonicalShareUrl(home));
+        String channel = "https://www.youtube.com/@someone";
+        same("a channel is left alone", channel, ScreenRules.canonicalShareUrl(channel));
+        String search = "https://www.youtube.com/results?search_query=x";
+        same("a search is left alone", search, ScreenRules.canonicalShareUrl(search));
+        String watchNoV = "https://www.youtube.com/watch";
+        same("watch with no video is left alone", watchNoV,
+                ScreenRules.canonicalShareUrl(watchNoV));
+        String live = "https://www.youtube.com/live";
+        same("live with no id is left alone", live, ScreenRules.canonicalShareUrl(live));
+
+        // Host confusion: a lookalike must never be treated as YouTube, or this
+        // becomes a redirector into somebody else's site.
+        String lookalike = "https://youtube.com.evil.example/watch?v=abc";
+        same("a lookalike host is left alone", lookalike,
+                ScreenRules.canonicalShareUrl(lookalike));
+        String lookalike2 = "https://notyoutube.com/watch?v=abc";
+        same("a host that merely ends in youtube is left alone", lookalike2,
+                ScreenRules.canonicalShareUrl(lookalike2));
+
+        // Scheme.
+        String plain = "http://www.youtube.com/watch?v=abc";
+        same("http is left alone", plain, ScreenRules.canonicalShareUrl(plain));
+
+        // Junk in the id never reaches a URL: the id goes back out to every
+        // client, so it is checked rather than trusted.
+        String injected = "https://www.youtube.com/watch?v=abc/../../evil";
+        same("an id with a path is left alone", injected,
+                ScreenRules.canonicalShareUrl(injected));
+        same("a null URL is left alone", null, ScreenRules.canonicalShareUrl(null));
+        same("an empty URL is left alone", "", ScreenRules.canonicalShareUrl(""));
+        same("junk is left alone", "not a url at all",
+                ScreenRules.canonicalShareUrl("not a url at all"));
+        same("an over-long id is left alone",
+                "https://youtu.be/" + "a".repeat(65),
+                ScreenRules.canonicalShareUrl("https://youtu.be/" + "a".repeat(65)));
     }
 
     private static void hostChecks() {
@@ -374,6 +450,12 @@ public class ProbeSharedScreens {
     private static ScreenRules.Rejection ruleOf(String url) {
         return ScreenRules.checkUrl(
                 url, ScreenRules.DEFAULT_ALLOWED_HOSTS);
+    }
+
+    /** A canonicalisation test: what went in, what must come out. */
+    private static void same(String what, String expected, String got) {
+        check(what + " -> " + (expected == null ? "null" : expected),
+                java.util.Objects.equals(expected, got), got);
     }
 
     private static void allow(String host, boolean expected) {

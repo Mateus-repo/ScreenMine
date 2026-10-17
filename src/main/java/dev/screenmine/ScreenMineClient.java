@@ -800,6 +800,15 @@ public final class ScreenMineClient implements ClientModInitializer {
     public void navigate(String streamId, String url) {
         net.send(Packets.ctl(streamId, "navigate", url));
         PlacedScreen screen = world.get(streamId);
+        // A shared screen also goes out over the Minecraft channel. Without this
+        // the owner changes the video and nobody else finds out: the legacy
+        // packet above goes to a socket this build never opens, and the
+        // multiplayer build has no working companion server to receive it.
+        // Found by reading the code, not by a log - the owner navigating their
+        // own shared screen produced no line anywhere.
+        if (screen != null && screen.browser.isRemote()) {
+            dev.screenmine.mp.SharedScreensClient.navigated(streamId, url);
+        }
         if (screen != null) {
             screen.browser.navigate(url, true);
         }

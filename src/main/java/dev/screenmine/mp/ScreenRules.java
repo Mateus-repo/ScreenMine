@@ -99,6 +99,121 @@ public final class ScreenRules {
      * requires either an exact hit or a dot before the domain, so a subdomain
      * passes and a lookalike does not.
      */
+    /**
+     * Rewrites a YouTube video URL to the one form that cannot drift.
+     *
+     * <p>Taken from WebDisplays' {@code VideoType.getURLFromID}, and the reason
+     * is specific enough to be worth writing down. Watching "together" means two
+     * independent Chromium sessions, and on {@code /watch} the page contains the
+     * places where YouTube decides for itself: the recommendations sidebar and
+     * the autoplay radio. Those are per session. One browser shows the home
+     * feed, the other rolls into a video; one lands on
+     * {@code watch?v=A&list=RDA&start_radio=1} and the other on a different
+     * radio. Nothing downstream can fix that - playback sync can only agree on a
+     * position inside a page, and there is no position to agree on when the two
+     * pages are not the same page.
+     *
+     * <p>{@code /embed/<id>} has neither the sidebar nor the radio. Same video on
+     * every client, so there is something for the sync to align.
+     *
+     * <p>What is lost, plainly: the sidebar, the comments and the channel header.
+     * That is the trade and for watching together it is the right one, but it is
+     * a visible change and not something to do quietly to somebody's own screen.
+     * So this is applied to <em>shared</em> screens only; a screen spawned
+     * locally still opens whatever the player asked for.
+     *
+     * <p>Deliberately no {@code autoplay=1}, unlike the original. An embed that
+     * starts without a user gesture is muted by the browser, and a muted video
+     * would silently kill the distance-based audio falloff that is the whole
+     * reason this mod makes noise at all. Playback is driven by the existing
+     * agent instead.
+     *
+     * <p>Anything not positively recognised as one YouTube video comes back
+     * untouched, so this cannot mangle an address it does not understand. It is
+     * idempotent: canonicalising twice gives the same answer.
+     */
+    public static String canonicalShareUrl(String url) {
+        String id = youtubeVideoId(url);
+        return id.isEmpty() ? url : "https://www.youtube.com/embed/" + id;
+    }
+
+    /**
+     * The bare video id, or empty when this is not one specific YouTube video.
+     *
+     * <p>The home page, a channel, a playlist and a search all return empty, and
+     * that is the point: there is no single video to agree on for any of them.
+     */
+    public static String youtubeVideoId(String url) {
+        if (url == null || url.isBlank()) {
+            return "";
+        }
+        URI uri;
+        try {
+            uri = URI.create(url.trim());
+        } catch (IllegalArgumentException ex) {
+            return "";
+        }
+        if (uri.getScheme() == null || !uri.getScheme().equalsIgnoreCase("https")) {
+            return "";
+        }
+        String host = uri.getHost();
+        if (host == null) {
+            return "";
+        }
+        host = host.toLowerCase(java.util.Locale.ROOT);
+        String path = uri.getPath() == null ? "" : uri.getPath();
+
+        if (host.equals("youtu.be")) {
+            return sanitizeId(path.startsWith("/") ? path.substring(1) : path);
+        }
+        if (!hostAllowed(host, DEFAULT_ALLOWED_HOSTS)) {
+            // Only the YouTube hosts the allowlist names. A lookalike host must
+            // not be treated as YouTube, or this becomes a redirector.
+            return "";
+        }
+        if (path.equals("/watch")) {
+            String q = uri.getRawQuery();
+            if (q == null) {
+                return "";
+            }
+            for (String part : q.split("&")) {
+                if (part.startsWith("v=")) {
+                    return sanitizeId(part.substring(2));
+                }
+            }
+            return "";
+        }
+        for (String prefix : new String[]{"/embed/", "/shorts/", "/live/"}) {
+            if (path.startsWith(prefix)) {
+                return sanitizeId(path.substring(prefix.length()));
+            }
+        }
+        return "";
+    }
+
+    /**
+     * Keeps only what a YouTube video id can contain.
+     *
+     * <p>The id is going back into a URL that every client will open, so it is
+     * checked rather than trusted. Anything outside {@code [A-Za-z0-9_-]}, and
+     * anything longer than an id can be, is not an id - and an unrecognised
+     * string returns empty, which leaves the caller's URL untouched.
+     */
+    private static String sanitizeId(String candidate) {
+        if (candidate == null || candidate.isEmpty() || candidate.length() > 64) {
+            return "";
+        }
+        for (int i = 0; i < candidate.length(); i++) {
+            char c = candidate.charAt(i);
+            boolean ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == '-' || c == '_';
+            if (!ok) {
+                return "";
+            }
+        }
+        return candidate;
+    }
+
     public static boolean hostAllowed(String host, Set<String> allowedHosts) {
         if (host == null || host.isBlank()) {
             return false;

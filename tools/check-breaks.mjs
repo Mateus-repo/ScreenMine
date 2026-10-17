@@ -88,7 +88,23 @@ const lg = gradleName(LOCAL);
 const mg = gradleName(MP);
 has("nomes de jar diferentes", lg !== mg, `${lg} / ${mg}`);
 
-has("ambos sao client-only", local.environment === "client" && mp.environment === "client");
+// A local e' client-only de proposito: e' a versao que corre em qualquer
+// servidor sem o mod. A multiplayer e' universal porque precisa de carregar num
+// servidor dedicado para retransmitir os payloads. Nao e' um descuido - se a
+// multiplayer voltar a 'client', um servidor dedicado recusa-a e o design
+// inteiro deixa de funcionar.
+has(
+  "a local e' client-only e a multiplayer e' universal",
+  local.environment === "client" && mp.environment === "*",
+  `${local.environment} / ${mp.environment}`,
+);
+// mcef-modern e' environment: client, por isso um mod universal nao pode
+// depender dele: o servidor dedicado nao resolve a dependencia e recusa arrancar.
+has(
+  "a multiplayer nao depende de mcef-modern (ele e' client-only)",
+  mp.depends?.["mcef-modern"] === undefined && mp.recommends?.["mcef-modern"] !== undefined,
+  `depends=${JSON.stringify(mp.depends)}`,
+);
 has(
   "nomes de mixin config diferentes",
   JSON.stringify(local.mixins) !== JSON.stringify(mp.mixins),

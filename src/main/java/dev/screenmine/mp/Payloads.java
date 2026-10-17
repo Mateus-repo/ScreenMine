@@ -199,6 +199,9 @@ public final class Payloads {
      * could be megabytes is a payload someone will make megabytes.
      */
     public static void registerAll() {
+        if (!PayloadTypeRegistryAccess.beginRegistration()) {
+            return;
+        }
         PayloadTypeRegistryAccess.serverbound(Place.TYPE, Place.CODEC);
         PayloadTypeRegistryAccess.serverbound(Remove.TYPE, Remove.CODEC);
         PayloadTypeRegistryAccess.serverbound(Navigate.TYPE, Navigate.CODEC);

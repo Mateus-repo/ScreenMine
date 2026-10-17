@@ -28,8 +28,28 @@ final class PayloadTypeRegistryAccess {
 
     private static int serverbound;
     private static int clientbound;
+    private static boolean done;
 
     private PayloadTypeRegistryAccess() {
+    }
+
+    /**
+     * Whether {@link Payloads#registerAll()} has already run in this process.
+     *
+     * <p>Registration is not idempotent: the second call throws
+     * "Packet type is already registered" and takes the game down at startup.
+     * It happened for real, because the client runs both the main and the
+     * client entrypoint and both registered. The fix belongs where the mistake
+     * was; this flag only stops the same mistake from being fatal a second
+     * time, and says so in the log rather than pretending all is well.
+     */
+    static synchronized boolean beginRegistration() {
+        if (done) {
+            LOG.warn("payloads are already registered; ignoring a second call");
+            return false;
+        }
+        done = true;
+        return true;
     }
 
     static <T extends CustomPacketPayload> void serverbound(

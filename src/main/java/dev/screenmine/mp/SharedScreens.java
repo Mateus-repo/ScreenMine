@@ -78,7 +78,7 @@ public final class SharedScreens {
     private final Map<UUID, Long> lastSentAt = new HashMap<>();
 
     /** What the owner last said about a screen's video. */
-    public record PlaybackState(double time, boolean paused) {
+    public record PlaybackState(String url, double time, boolean paused) {
     }
 
     public SharedScreens(Set<String> allowedHosts, int maxPerPlayer) {
@@ -294,7 +294,6 @@ public final class SharedScreens {
         return gone;
     }
 
-    /** Forgets a player entirely: screens and rate buckets. */
     /**
      * The owner says where its video is.
      *
@@ -306,11 +305,16 @@ public final class SharedScreens {
      * updates the stored state on every send and still produces one message per
      * interval per viewer.
      *
+     * @param url where the owner's browser actually ended up, not the URL it was
+     *            placed with. Those differ constantly: the 12:08 run placed
+     *            youtube.com and drifted onto a radio playlist, and it is the
+     *            real one a viewer has to compare against before it moves.
      * @return the screen to broadcast, or null when there is nothing to say; in
      *         that case {@code reason} is null, meaning accepted and throttled
      */
-    public Screen reportPlayback(UUID screenId, UUID player, double time, boolean paused,
-                                 long nowMillis, ScreenRules.Rejection[] reason) {
+    public Screen reportPlayback(UUID screenId, UUID player, String url, double time,
+                                 boolean paused, long nowMillis,
+                                 ScreenRules.Rejection[] reason) {
         reason[0] = null;
         if (!rate(playbackRate, player, RateLimiter.PLAYBACK_LIMIT).tryAcquire(nowMillis)) {
             reason[0] = new ScreenRules.Rejection("playback-too-fast",
@@ -330,10 +334,18 @@ public final class SharedScreens {
             reason[0] = bad;
             return null;
         }
+        // The URL is checked here as well as on the client. It came off the wire
+        // and it is a URL, and this allowlist is the entire reason this server
+        // exists in the first version.
+        bad = ScreenRules.checkUrl(url, allowedHosts);
+        if (bad != null) {
+            reason[0] = bad;
+            return null;
+        }
 
         PlaybackState previous = playback.get(screenId);
         boolean pausedChanged = previous == null || previous.paused() != paused;
-        playback.put(screenId, new PlaybackState(time, paused));
+        playback.put(screenId, new PlaybackState(url.trim(), time, paused));
 
         long last = lastSentAt.getOrDefault(screenId, Long.MIN_VALUE);
         if (!PlaybackSync.shouldSend(last, pausedChanged, nowMillis)) {
@@ -343,6 +355,7 @@ public final class SharedScreens {
         return current;
     }
 
+    /** Forgets a player entirely: screens and rate buckets. */
     public void forgetPlayer(UUID player) {
         removeAllOf(player);
         placeRate.remove(player);

@@ -31,12 +31,56 @@ public final class ProbePlaybackSync {
         reportIsCoalescedIntoOneBroadcast();
         playbackStateIsDroppedWithTheScreen();
         rateLimitIsAboveWhatAnHonestClientSends();
+        checkPlaylistIsRecognised();
+        rateLimitSurvivesAUrlCarryingReport();
 
         System.out.println("  " + passed + " de " + (passed + failures.size()) + " passaram");
         for (String f : failures) {
             System.out.println("  FAIL  " + f);
         }
         System.exit(failures.isEmpty() ? 0 : 1);
+    }
+
+    // -------------------------------------------------------------- playlist //
+
+    private static void checkPlaylistIsRecognised() {
+        // The shape that made two clients show different videos: the browser
+        // drifts onto a radio playlist and each session rolls into its own next
+        // video. There is no position to agree on.
+        ok("watch without a list is not a playlist",
+                !PlaybackSync.isPlaylist("https://www.youtube.com/watch?v=TzdAY7QJ-fY"));
+        ok("a radio playlist is a playlist",
+                PlaybackSync.isPlaylist(
+                        "https://www.youtube.com/watch?v=TzdAY7QJ-fY&list=RDTzdAY7QJ-fY&start_radio=1"));
+        ok("any list parameter counts",
+                PlaybackSync.isPlaylist("https://www.youtube.com/watch?v=A&list=PL123"));
+        ok("the home page is not a playlist",
+                !PlaybackSync.isPlaylist("https://www.youtube.com/"));
+        ok("a word list in the path is not a parameter",
+                !PlaybackSync.isPlaylist("https://www.youtube.com/playlist/x"));
+        ok("list= before the question mark is not a parameter",
+                !PlaybackSync.isPlaylist("https://list=evil.example/"));
+        ok("null is not a playlist", !PlaybackSync.isPlaylist(null));
+    }
+
+    private static void rateLimitSurvivesAUrlCarryingReport() {
+        // The report now carries the owner's real URL, so a bogus one is a new
+        // way in and the server has to refuse it exactly as it refuses a bogus
+        // time. Without this the allowlist would have a hole in the one message
+        // that goes out automatically.
+        UUID owner = UUID.randomUUID();
+        SharedScreens screens = new SharedScreens(ScreenRules.DEFAULT_ALLOWED_HOSTS, 2);
+        UUID id = placeOne(screens, owner);
+
+        ScreenRules.Rejection[] why = new ScreenRules.Rejection[1];
+        ok("an honest URL is accepted",
+                screens.reportPlayback(id, owner, "https://www.youtube.com/watch?v=A",
+                        10.0, false, 1_000L, why) != null);
+        eq("and says nothing", null, why[0]);
+
+        screens.reportPlayback(id, owner, "https://evil.example/watch?v=A",
+                20.0, false, 5_000L, why);
+        eq("a URL off the allowlist is refused", "url-host-not-allowed", why[0].code());
     }
 
     // ------------------------------------------------------------------ time //
@@ -110,11 +154,11 @@ public final class ProbePlaybackSync {
 
         ScreenRules.Rejection[] why = new ScreenRules.Rejection[1];
         SharedScreens.Screen sent = screens.reportPlayback(
-                id, owner, 12.0, false, 1_000L, why);
+                id, owner, "https://www.youtube.com/watch?v=TzdAY7QJ-fY", 12.0, false, 1_000L, why);
         ok("the owner's report is accepted", sent != null && why[0] == null);
 
         SharedScreens.Screen refused = screens.reportPlayback(
-                id, stranger, 99.0, false, 5_000L, why);
+                id, stranger, "https://www.youtube.com/watch?v=TzdAY7QJ-fY", 99.0, false, 5_000L, why);
         ok("a stranger is refused", refused == null);
         eq("and learns nothing about the id", "not-your-screen", why[0].code());
     }
@@ -128,10 +172,10 @@ public final class ProbePlaybackSync {
         ScreenRules.Rejection[] why = new ScreenRules.Rejection[1];
         // The viewer tries to drag the owner's video. Paused state is included,
         // because "pause everybody" is the interesting version of this attack.
-        screens.reportPlayback(id, viewer, 0.0, true, 1_000L, why);
+        screens.reportPlayback(id, viewer, "https://www.youtube.com/watch?v=TzdAY7QJ-fY", 0.0, true, 1_000L, why);
         eq("a viewer cannot pause the owner", "not-your-screen", why[0].code());
         ok("and the owner's own state is untouched",
-                screens.reportPlayback(id, owner, 7.0, false, 5_000L, why) != null);
+                screens.reportPlayback(id, owner, "https://www.youtube.com/watch?v=TzdAY7QJ-fY", 7.0, false, 5_000L, why) != null);
     }
 
     private static void reportIsCoalescedIntoOneBroadcast() {
@@ -151,7 +195,7 @@ public final class ProbePlaybackSync {
         // accepted reports, one message out.
         int sent = 0;
         for (int i = 0; i < 20; i++) {
-            if (screens.reportPlayback(id, owner, i, false, t + i * 5L, why) != null) {
+            if (screens.reportPlayback(id, owner, "https://www.youtube.com/watch?v=TzdAY7QJ-fY", i, false, t + i * 5L, why) != null) {
                 sent++;
             }
             eq("an accepted report is never an error", null, why[0]);
@@ -161,7 +205,7 @@ public final class ProbePlaybackSync {
         // Once the interval is up it goes out again.
         long later = t + PlaybackSync.REPORT_INTERVAL_MILLIS + 100L;
         ok("and once the interval is up, again",
-                screens.reportPlayback(id, owner, 80.0, false, later, why) != null);
+                screens.reportPlayback(id, owner, "https://www.youtube.com/watch?v=TzdAY7QJ-fY", 80.0, false, later, why) != null);
     }
 
     private static void playbackStateIsDroppedWithTheScreen() {
@@ -170,7 +214,7 @@ public final class ProbePlaybackSync {
         UUID id = placeOne(screens, owner);
 
         ScreenRules.Rejection[] why = new ScreenRules.Rejection[1];
-        screens.reportPlayback(id, owner, 5.0, false, 1_000L, why);
+        screens.reportPlayback(id, owner, "https://www.youtube.com/watch?v=TzdAY7QJ-fY", 5.0, false, 1_000L, why);
         eq("one screen exists", 1, screens.count());
 
         // If the playback state survived, this fresh screen with the same id
@@ -179,7 +223,7 @@ public final class ProbePlaybackSync {
         screens.remove(id, owner, 20_000L, why);
         eq("the screen is gone", 0, screens.count());
         ok("and its playback state went with it",
-                screens.reportPlayback(id, owner, 6.0, false, 20_500L, why) == null);
+                screens.reportPlayback(id, owner, "https://www.youtube.com/watch?v=TzdAY7QJ-fY", 6.0, false, 20_500L, why) == null);
         eq("which means the id is unknown", "not-your-screen", why[0].code());
     }
 

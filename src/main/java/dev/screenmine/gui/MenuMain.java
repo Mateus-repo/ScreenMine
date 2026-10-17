@@ -111,7 +111,7 @@ public final class MenuMain extends Screen {
             // player typed their address after it and UrlEntry turned the lot
             // into a DuckDuckGo search - which the server then refused as not
             // on the allowlist, so it looked like the feature was broken.
-            minecraft.gui.setScreen(new UrlEntry(Cfg.DEFAULT_URL, url -> {
+            minecraft.gui.setScreen(new UrlEntry(Cfg.DEFAULT_SHARE_URL, url -> {
                 if (dev.screenmine.mp.SharedScreensClient.place(minecraft, url)) {
                     minecraft.gui.setScreen(null);
                 }

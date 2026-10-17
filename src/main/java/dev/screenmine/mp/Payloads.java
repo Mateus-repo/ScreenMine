@@ -189,7 +189,7 @@ public final class Payloads {
      * <p>{@code time} is a raw double from a packet and ends up in a script, so
      * {@link PlaybackSync#checkTime} exists to keep NaN out of a browser.
      */
-    public record Playback(UUID screenId, double time, boolean paused)
+    public record Playback(UUID screenId, String url, double time, boolean paused)
             implements CustomPacketPayload {
 
         public static final Type<Playback> TYPE =
@@ -198,10 +198,12 @@ public final class Payloads {
         public static final StreamCodec<RegistryFriendlyByteBuf, Playback> CODEC = StreamCodec.of(
                 (buf, v) -> {
                     buf.writeUUID(v.screenId);
+                    ByteBufCodecs.STRING_UTF8.encode(buf, v.url);
                     buf.writeDouble(v.time);
                     buf.writeBoolean(v.paused);
                 },
-                buf -> new Playback(buf.readUUID(), buf.readDouble(), buf.readBoolean()));
+                buf -> new Playback(buf.readUUID(), ByteBufCodecs.STRING_UTF8.decode(buf),
+                        buf.readDouble(), buf.readBoolean()));
 
         @Override
         public Type<Playback> type() {
@@ -210,7 +212,7 @@ public final class Payloads {
     }
 
     /** Server to client: the owner says where the video is. Follow it. */
-    public record ScreenPlayback(UUID screenId, double time, boolean paused)
+    public record ScreenPlayback(UUID screenId, String url, double time, boolean paused)
             implements CustomPacketPayload {
 
         public static final Type<ScreenPlayback> TYPE =
@@ -220,10 +222,12 @@ public final class Payloads {
                 StreamCodec.of(
                         (buf, v) -> {
                             buf.writeUUID(v.screenId);
+                            ByteBufCodecs.STRING_UTF8.encode(buf, v.url);
                             buf.writeDouble(v.time);
                             buf.writeBoolean(v.paused);
                         },
-                        buf -> new ScreenPlayback(buf.readUUID(), buf.readDouble(),
+                        buf -> new ScreenPlayback(buf.readUUID(),
+                                ByteBufCodecs.STRING_UTF8.decode(buf), buf.readDouble(),
                                 buf.readBoolean()));
 
         @Override

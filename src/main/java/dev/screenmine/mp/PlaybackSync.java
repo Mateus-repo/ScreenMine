@@ -45,6 +45,32 @@ public final class PlaybackSync {
     public static final double MAX_TIME_SECONDS = 86_400.0;
 
     /**
+     * Whether this URL is a playlist rather than one video.
+     *
+     * <p>A playlist is the one shape that cannot be kept in step, and not for a
+     * reason that code can fix. When a browser is left on
+     * {@code watch?v=A&list=RDA&start_radio=1} it decides for itself what to
+     * play next, and the decision is per session: the owner's browser rolls into
+     * video B while the viewer's rolls into video C. There is no time to agree
+     * on, because the two pages are not the same page.
+     *
+     * <p>This is not hypothetical. The 12:08 run placed
+     * {@code https://www.youtube.com} and both browsers landed on a radio
+     * playlist within half a minute, which is why nobody was seeing the same
+     * thing and why the sync reported nothing at all.
+     *
+     * <p>Checked before the time is used, so a playlist produces one honest log
+     * line instead of two players seeking to timestamps that mean nothing.
+     */
+    public static boolean isPlaylist(String url) {
+        if (url == null) {
+            return false;
+        }
+        int q = url.indexOf('?');
+        return q >= 0 && url.indexOf("list=", q) > q;
+    }
+
+    /**
      * Whether a reported position is usable at all.
      *
      * <p>The NaN case is not pedantry. {@code time} arrives as a raw double in a

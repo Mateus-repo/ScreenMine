@@ -141,7 +141,7 @@ final class ScreenNetwork {
         ServerPlayNetworking.registerGlobalReceiver(Payloads.Playback.TYPE, (pb, context) -> {
             ServerPlayer player = context.player();
             SharedScreens.Screen screen = screens.reportPlayback(
-                    pb.screenId(), player.getUUID(), pb.time(), pb.paused(),
+                    pb.screenId(), player.getUUID(), pb.url(), pb.time(), pb.paused(),
                     context.server().getTickCount() * 50L, scratch);
             if (screen == null) {
                 if (scratch[0] != null) {
@@ -150,7 +150,8 @@ final class ScreenNetwork {
                 return;
             }
             broadcast(context.server(),
-                    new Payloads.ScreenPlayback(screen.id(), pb.time(), pb.paused()));
+                    new Payloads.ScreenPlayback(screen.id(), pb.url(),
+                            pb.time(), pb.paused()));
         });
 
         // A newcomer is told about everything that already exists. Without this

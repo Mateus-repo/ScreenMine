@@ -86,6 +86,20 @@ public final class Cfg {
     /** Shared screens this client may hold a live browser for at once. */
     public static final int MAX_REMOTE_BROWSERS = 4;
 
+    /**
+     * What the share box starts with.
+     *
+     * <p>A specific video, not the home page, and that is the whole point. Both
+     * runs that failed placed youtube.com, and a home page has no video element:
+     * there is no position to report and nothing to sync. Worse, YouTube sends
+     * each session into its own radio playlist within seconds, so the two
+     * browsers end up on different videos entirely. Opening on one known video
+     * is the only start that has a chance of both screens matching.
+     */
+    public static final String DEFAULT_SHARE_URL =
+            "https://www.youtube.com/watch?v=TzdAY7QJ-fY";
+
+    /** The address a locally spawned screen opens. No sync to worry about here. */
     public static final String DEFAULT_URL = "https://www.youtube.com";
 
     /** Screen size limits, in blocks (width). */

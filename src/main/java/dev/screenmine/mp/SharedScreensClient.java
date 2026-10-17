@@ -183,13 +183,31 @@ public final class SharedScreensClient {
             return;
         }
         syncTicks = 0;
-        for (java.util.UUID id : mineOwned()) {
+        java.util.List<java.util.UUID> mine = mineOwned();
+        if (mine.isEmpty()) {
+            // Once only, and once per state: a player who owns nothing says this
+            // once and never again, instead of being talked at twice a second.
+            logOnce("sync", "no shared screens of yours to report for");
+            return;
+        }
+        for (java.util.UUID id : mine) {
             PlacedScreen screen = WORLD == null ? null : WORLD.get(id.toString());
-            if (screen == null || !screen.browser.hasVideo()) {
+            if (screen == null) {
+                logOnce(id.toString(), "not built on this client yet");
                 continue;
             }
-            ClientPlayNetworking.send(new Payloads.Playback(
-                    id, screen.browser.playbackTime(), screen.browser.playbackPaused()));
+            if (!screen.browser.hasVideo()) {
+                // The common one, and the one that made this look broken: a YouTube
+                // home page has no video element, so there is no position to
+                // report and nothing is sent. Said out loud now instead of
+                // looking like a network problem.
+                logOnce(id.toString(), "page has no video element, so nothing to sync",
+                        screen.browser.url());
+                continue;
+            }
+            logOnce(id.toString(), "reporting");
+            ClientPlayNetworking.send(new Payloads.Playback(id, screen.browser.url(),
+                    screen.browser.playbackTime(), screen.browser.playbackPaused()));
         }
     }
 
@@ -209,6 +227,26 @@ public final class SharedScreensClient {
             (int) (PlaybackSync.REPORT_INTERVAL_MILLIS / 50L);
 
     private static int syncTicks;
+
+    /**
+     * One log line per screen per distinct reason, so a viewer that cannot be
+     * synced says why once instead of every two seconds forever.
+     */
+    private static final java.util.Map<String, String> LAST_SYNC_NOTE =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Same, without a detail to add. */
+    private static void logOnce(String id, String why) {
+        logOnce(id, why, null);
+    }
+
+    private static void logOnce(String id, String why, String detail) {
+        String line = why + (detail == null || detail.isEmpty() ? "" : " (" + detail + ")");
+        if (line.equals(LAST_SYNC_NOTE.put(id, line))) {
+            return;
+        }
+        LOG.info("screen {}: {}", id, line);
+    }
     /**
      * Registers the server-to-client receivers and keeps the world for the tick.
      */
@@ -310,9 +348,28 @@ public final class SharedScreensClient {
                 return;
             }
             var browser = screen.browser;
+            // The one rule that makes this safe. The owner reports the page its
+            // browser actually ended up on, which is not the page it was placed
+            // with - at 12:08 both browsers were placed youtube.com and drifted
+            // onto different radio playlists within half a minute. Seeking a
+            // viewer to 94 seconds of the owner's video B while the viewer is on
+            // video C does not sync anybody; it just moves both of them away
+            // from what they were watching. So the URLs are compared first, and
+            // nothing happens when they disagree.
+            if (PlaybackSync.isPlaylist(pb.url())) {
+                logOnce(screen.streamId, "owner is on a playlist, which cannot be kept in step",
+                        pb.url());
+                return;
+            }
+            if (!dev.screenmine.browser.BrowserInstance.sameVideo(browser.url(), pb.url())) {
+                logOnce(screen.streamId, "not the same video as the owner; leaving it alone",
+                        "ours=" + browser.url() + " theirs=" + pb.url());
+                return;
+            }
             // No video element yet means nothing to seek or to pause. Seeking
             // anyway would restart the video at zero the moment it appears.
             if (!browser.hasVideo()) {
+                logOnce(screen.streamId, "this page has no video element yet", browser.url());
                 return;
             }
             boolean moved = false;

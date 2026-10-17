@@ -35,6 +35,8 @@ public class ProbeSharedScreens {
         spam();
         disconnect();
         rateLimiter();
+        dimension();
+        distance();
 
         System.out.println();
         System.out.println(pass + " passaram, " + fail + " falharam");
@@ -194,6 +196,59 @@ public class ProbeSharedScreens {
                 new RateLimiter(1, 1000).tryAcquire(0));
     }
 
+    // ------------------------------------------------------ dimensao/distancia //
+
+    private static void dimension() {
+        section("dimensao");
+        UUID a = UUID.randomUUID();
+        SharedScreens s = fresh();
+
+        check("mesma dimensao e' aceite", place(s, a, 0, 1, 64, 2, 0, 64, 0, DIM) == null);
+        ScreenRules.Rejection why =
+                place(s, a, W(), 1, 64, 2, 0, 64, 0, "minecraft:the_nether");
+        check("outra dimensao e' recusada", why != null
+                && "wrong-dimension".equals(why.code()), String.valueOf(why));
+        why = place(s, a, 2 * W(), 1, 64, 2, 0, 64, 0, "");
+        check("dimensao vazia e' recusada", why != null
+                && "dimension-empty".equals(why.code()), String.valueOf(why));
+        why = place(s, a, 3 * W(), 1, 64, 2, 0, 64, 0, "x".repeat(200));
+        check("dimensao gigante e' recusada", why != null
+                && "dimension-too-long".equals(why.code()), String.valueOf(why));
+    }
+
+    private static void distance() {
+        section("distancia ao jogador");
+        UUID a = UUID.randomUUID();
+
+        // 64 blocos: o limite, exacto, tem de passar.
+        SharedScreens s1 = fresh();
+        check("exactamente 64 blocos e' aceite",
+                place(s1, a, 0, 64, 64, 0, 0, 64, 0, DIM) == null);
+
+        SharedScreens s2 = fresh();
+        ScreenRules.Rejection why = place(s2, a, 0, 64.1, 64, 0, 0, 64, 0, DIM);
+        check("64.1 blocos e' recusado", why != null
+                && "too-far-from-player".equals(why.code()), String.valueOf(why));
+
+        // A diagonal conta: 100 blocos em x e 100 em z sao 141 de distancia.
+        SharedScreens s3 = fresh();
+        check("a diagonal conta, nao cada eixo",
+                place(s3, a, 0, 100, 64, 100, 0, 64, 0, DIM) != null);
+
+        // NaN na posicao do jogador tem de ser recusado e nao passar em silencio.
+        SharedScreens s4 = fresh();
+        why = place(s4, a, 0, 1, 64, 2, Double.NaN, 64, 0, DIM);
+        check("jogador em NaN e' recusado", why != null
+                && "player-position-not-finite".equals(why.code()), String.valueOf(why));
+
+        SharedScreens s5 = fresh();
+        why = place(s5, a, 0, 1, 64, 2, 0, 64, 0, DIM);
+        check("lugar normal ainda passa depois de tudo isto", why == null);
+    }
+
+    private static long W() {
+        return RateLimiter.WINDOW_MILLIS;
+    }
     // ------------------------------------------------------------- ajudantes //
 
 
@@ -205,12 +260,23 @@ public class ProbeSharedScreens {
         return new SharedScreens(ScreenRules.DEFAULT_ALLOWED_HOSTS, maxPerPlayer);
     }
 
+    private static final String DIM = "minecraft:overworld";
+
     private static ScreenRules.Rejection place(SharedScreens s, UUID who, long now) {
-        return s.place(who, "P", "https://youtu.be/x", 1, 64, 2, 0f, 6f, 3.375f, now);
+        return place(s, who, now, 1, 64, 2, 0, 64, 0, DIM);
+    }
+
+    private static ScreenRules.Rejection place(SharedScreens s, UUID who, long now,
+                                               double x, double y, double z,
+                                               double px, double py, double pz,
+                                               String dim) {
+        return s.place(who, "P", "https://youtu.be/x", dim, x, y, z,
+                0f, 6f, 3.375f, px, py, pz, DIM, now);
     }
 
     private static UUID placeOk(SharedScreens s, UUID who, String name) {
-        s.place(who, name, "https://youtu.be/x", 1, 64, 2, 0f, 6f, 3.375f, 0);
+        s.place(who, name, "https://youtu.be/x", DIM, 1, 64, 2,
+                0f, 6f, 3.375f, 0, 64, 0, DIM, 0);
         return s.all().stream().filter(x -> who.equals(x.owner()))
                 .reduce((x, y) -> y).orElseThrow().id();
     }

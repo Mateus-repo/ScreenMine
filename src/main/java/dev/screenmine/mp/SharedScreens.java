@@ -30,18 +30,18 @@ import java.util.UUID;
 public final class SharedScreens {
 
     /** One shared screen, as the server knows it. */
-    public record Screen(UUID id, UUID owner, String ownerName, String url,
+    public record Screen(UUID id, UUID owner, String ownerName, String url, String dimension,
                          double x, double y, double z,
                          float yaw, float width, float height) {
 
         /** The same screen after the owner pointed it somewhere else. */
         public Screen withUrl(String newUrl) {
-            return new Screen(id, owner, ownerName, newUrl, x, y, z, yaw, width, height);
+            return new Screen(id, owner, ownerName, newUrl, dimension, x, y, z, yaw, width, height);
         }
 
         /** The same screen after the owner moved it. */
         public Screen withPose(double nx, double ny, double nz, float nyaw) {
-            return new Screen(id, owner, ownerName, url, nx, ny, nz, nyaw, width, height);
+            return new Screen(id, owner, ownerName, url, dimension, nx, ny, nz, nyaw, width, height);
         }
     }
 
@@ -90,14 +90,21 @@ public final class SharedScreens {
     /**
      * Accepts a placement, or explains why not.
      *
+     * <p>{@code playerDimension} and the player's position come from the server's
+     * own knowledge, never from the message. A client that says "I am here, at
+     * 0 64 0, in the overworld" is only believed about the URL it wants opened.
+     *
      * <p>Order matters and is not arbitrary. Rate first, so a spammer is turned
-     * away before the more expensive checks; then ownership of the quota, so a
-     * player over their limit hears about the limit and not about their third
-     * URL being odd; then the payload itself.
+     * away before the more expensive checks; then the quota, so a player over
+     * their limit hears about the limit; then the dimension, because a screen in
+     * the wrong dimension is refused for the clearest possible reason before
+     * anyone argues about coordinates.
      */
     public ScreenRules.Rejection place(UUID player, String playerName, String url,
-                                       double x, double y, double z,
+                                       String dimension, double x, double y, double z,
                                        float yaw, float width, float height,
+                                       double px, double py, double pz,
+                                       String playerDimension,
                                        long nowMillis) {
         if (!rate(placeRate, player, RateLimiter.PLACE_LIMIT).tryAcquire(nowMillis)) {
             return new ScreenRules.Rejection("place-too-fast",
@@ -108,7 +115,11 @@ public final class SharedScreens {
             return new ScreenRules.Rejection("too-many-screens",
                     maxPerPlayer + " is the limit");
         }
-        ScreenRules.Rejection bad = ScreenRules.checkUrl(url, allowedHosts);
+        ScreenRules.Rejection bad = ScreenRules.checkDimension(dimension, playerDimension);
+        if (bad != null) {
+            return bad;
+        }
+        bad = ScreenRules.checkUrl(url, allowedHosts);
         if (bad != null) {
             return bad;
         }
@@ -120,13 +131,17 @@ public final class SharedScreens {
         if (bad != null) {
             return bad;
         }
+        bad = ScreenRules.checkDistance(x, y, z, px, py, pz);
+        if (bad != null) {
+            return bad;
+        }
         bad = ScreenRules.checkYaw(yaw);
         if (bad != null) {
             return bad;
         }
 
         Screen screen = new Screen(UUID.randomUUID(), player, playerName, url.trim(),
-                x, y, z, yaw, width, height);
+                dimension, x, y, z, yaw, width, height);
         byId.put(screen.id(), screen);
         byOwner.computeIfAbsent(player, k -> new ArrayList<>()).add(screen.id());
         return null;

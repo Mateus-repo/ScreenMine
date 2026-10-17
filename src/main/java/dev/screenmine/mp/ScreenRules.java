@@ -153,10 +153,71 @@ public final class ScreenRules {
         return null;
     }
 
+    /** How far a screen may be placed from the player placing it. Blocks. */
+    public static final double MAX_PLACEMENT_DISTANCE = 64.0;
+
+    /** Longest dimension id that will be believed. */
+    public static final int MAX_DIMENSION_LENGTH = 128;
+
     /** Whether the yaw is a real angle. */
     public static Rejection checkYaw(float yaw) {
         if (!Float.isFinite(yaw)) {
             return new Rejection("yaw-not-finite", String.valueOf(yaw));
+        }
+        return null;
+    }
+
+    /**
+     * Whether the screen is in the dimension the placer is actually in.
+     *
+     * <p>Checked against the server's own knowledge of where the player is, not
+     * against what the message claims. A message that says "I am in the nether"
+     * while the server can see the player in the overworld is refused for
+     * saying so, and the client only renders screens whose dimension matches the
+     * one it is in.
+     *
+     * <p>Without this a screen could be placed in a dimension the placer cannot
+     * see, and anyone who goes there finds a screen nobody remembers putting
+     * there.
+     */
+    public static Rejection checkDimension(String claimed, String actual) {
+        if (claimed == null || claimed.isBlank()) {
+            return new Rejection("dimension-empty", null);
+        }
+        if (claimed.length() > MAX_DIMENSION_LENGTH) {
+            return new Rejection("dimension-too-long", claimed);
+        }
+        if (actual != null && !claimed.equals(actual)) {
+            return new Rejection("wrong-dimension", claimed + " != " + actual);
+        }
+        return null;
+    }
+
+    /**
+     * Whether the screen is close enough to the player placing it.
+     *
+     * <p>Three dimensions, not one, and each is refused for a different reason:
+     * a NaN anywhere would make every comparison false and sail through a
+     * single range check, so it is caught first; then the distance itself.
+     *
+     * <p>64 blocks is about the render distance' worth of "visible from here".
+     * A screen the placer cannot see is a screen nobody can find again.
+     */
+    public static Rejection checkDistance(double x, double y, double z,
+                                          double px, double py, double pz) {
+        if (!Double.isFinite(px) || !Double.isFinite(py) || !Double.isFinite(pz)) {
+            return new Rejection("player-position-not-finite", null);
+        }
+        double dx = x - px;
+        double dy = y - py;
+        double dz = z - pz;
+        double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (!Double.isFinite(distance)) {
+            return new Rejection("distance-not-finite", null);
+        }
+        if (distance > MAX_PLACEMENT_DISTANCE) {
+            return new Rejection("too-far-from-player",
+                    (int) Math.ceil(distance) + " blocks");
         }
         return null;
     }

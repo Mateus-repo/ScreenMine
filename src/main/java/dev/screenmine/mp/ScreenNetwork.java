@@ -41,10 +41,26 @@ final class ScreenNetwork {
         ServerPlayNetworking.registerGlobalReceiver(Payloads.Place.TYPE, (place, context) -> {
             ServerPlayer player = context.player();
             SharedScreens.Screen screen = null;
+            // The position and the dimension come from the server's own view of
+            // the player, never from the message. The message is only believed
+            // about the URL it wants opened: a client that says "I am here, at
+            // 0 64 0, in the overworld" is describing a position the server can
+            // already see, and if the two disagree the screen goes where the
+            // player is, not where the message claims.
+            net.minecraft.server.level.ServerPlayer server_player = player;
+            double px = server_player.getX();
+            double py = server_player.getY();
+            double pz = server_player.getZ();
+            // identifier(), not location(): checked against the 26.3 jar, where
+            // ResourceKey has no location() at all.
+            String playerDimension =
+                    server_player.level().dimension().identifier().toString();
+
             ScreenRules.Rejection why = screens.place(
                     player.getUUID(), player.getGameProfile().name(),
-                    place.url(), place.x(), place.y(), place.z(),
+                    place.url(), place.dimension(), place.x(), place.y(), place.z(),
                     place.yaw(), place.width(), place.height(),
+                    px, py, pz, playerDimension,
                     context.server().getTickCount() * 50L);
 
             if (why != null) {
@@ -128,7 +144,7 @@ final class ScreenNetwork {
     }
 
     private static Payloads.ScreenAdded addedPayload(SharedScreens.Screen s) {
-        return new Payloads.ScreenAdded(s.id(), s.ownerName(), s.url(),
+        return new Payloads.ScreenAdded(s.id(), s.ownerName(), s.url(), s.dimension(),
                 s.x(), s.y(), s.z(), s.yaw(), s.width(), s.height());
     }
 

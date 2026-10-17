@@ -52,7 +52,7 @@ public final class Payloads {
      * <p>No id. The server assigns one, which is what keeps a client from
      * choosing which screen it is talking about.
      */
-    public record Place(String url, double x, double y, double z,
+    public record Place(String url, String dimension, double x, double y, double z,
                         float yaw, float width, float height)
             implements CustomPacketPayload {
 
@@ -62,6 +62,7 @@ public final class Payloads {
         public static final StreamCodec<RegistryFriendlyByteBuf, Place> CODEC = StreamCodec.of(
                 (buf, v) -> {
                     ByteBufCodecs.STRING_UTF8.encode(buf, v.url);
+                    ByteBufCodecs.STRING_UTF8.encode(buf, v.dimension);
                     buf.writeDouble(v.x);
                     buf.writeDouble(v.y);
                     buf.writeDouble(v.z);
@@ -70,6 +71,7 @@ public final class Payloads {
                     buf.writeFloat(v.height);
                 },
                 buf -> new Place(
+                        ByteBufCodecs.STRING_UTF8.decode(buf),
                         ByteBufCodecs.STRING_UTF8.decode(buf),
                         buf.readDouble(), buf.readDouble(), buf.readDouble(),
                         buf.readFloat(), buf.readFloat(), buf.readFloat()));
@@ -116,7 +118,7 @@ public final class Payloads {
     }
 
     /** Server to client: here is a screen, at this exact place. */
-    public record ScreenAdded(UUID screenId, String owner, String url,
+    public record ScreenAdded(UUID screenId, String owner, String url, String dimension,
                               double x, double y, double z,
                               float yaw, float width, float height)
             implements CustomPacketPayload {
@@ -130,6 +132,7 @@ public final class Payloads {
                             buf.writeUUID(v.screenId);
                             ByteBufCodecs.STRING_UTF8.encode(buf, v.owner);
                             ByteBufCodecs.STRING_UTF8.encode(buf, v.url);
+                            ByteBufCodecs.STRING_UTF8.encode(buf, v.dimension);
                             buf.writeDouble(v.x);
                             buf.writeDouble(v.y);
                             buf.writeDouble(v.z);
@@ -139,6 +142,7 @@ public final class Payloads {
                         },
                         buf -> new ScreenAdded(
                                 buf.readUUID(),
+                                ByteBufCodecs.STRING_UTF8.decode(buf),
                                 ByteBufCodecs.STRING_UTF8.decode(buf),
                                 ByteBufCodecs.STRING_UTF8.decode(buf),
                                 buf.readDouble(), buf.readDouble(), buf.readDouble(),

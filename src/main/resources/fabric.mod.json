@@ -13,7 +13,7 @@
     "screenmine": "*"
   },
   "icon": "assets/screenmine_mp/icon.png",
-  "environment": "client",
+  "environment": "*",
   "entrypoints": {
     "client": [
       "dev.screenmine.ScreenMineClient"
@@ -26,7 +26,9 @@
     "fabricloader": ">=${loader_version}",
     "minecraft": "~${minecraft_version}",
     "java": ">=25",
-    "fabric-api": "*",
+    "fabric-api": "*"
+  },
+  "recommends": {
     "mcef-modern": "*"
   }
 }

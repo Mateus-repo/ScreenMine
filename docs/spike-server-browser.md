@@ -172,73 +172,72 @@ Montá-la daria espaço para sempre. Mas:
   ou montá-la mal é perda real;
 - precisa de root.
 
-### 6.3 Segurança — o túnel está a expor o servidor à internet
+### 6.3 Exposição à internet — como é que está feito, de facto
 
-Isto é prioridade acima do spike e foi medido, não suposto.
+**Correção: não é o playit.** A exposição é um **encaminhamento de portas no
+router de casa**, do IP público para a máquina:
 
-**Prova de que é alcançável de fora:**
+| Externo | Interno | Protocolo | Para que serve |
+|---|---|---|---|
+| `<porta publica>` | 25565 | TCP | o Minecraft |
+| 24454 | 24454 | TCP + UDP | o Simple Voice Chat |
 
-```
-[09:33:33] <jogador>[/<ip publico de um jogador>:64015] logged in with entity id 393236
-```
+O `playitd` está instalado e a correr no servidor, mas **não é o mecanismo** — é
+um resíduo. O `voice_host` do voice chat aponta para o hostname DDNS público da
+casa, o que confirma que o encaminhamento é no router.
 
-O endereço de origem é público, não da rede local. Portanto o `playitd` está a fazer túnel da
-porta 25565 para a internet, e o servidor **não está só na rede de casa**.
+**Isto é pior do que eu tinha dito, e melhor ao mesmo tempo:**
 
-**O que está ligado:**
+- **Pior:** o Minecraft e o voice chat estão expostos pela **tua ligação de
+  casa**, não por um túnel. Tudo o que os teus amigos jogam passa pela tua
+  banda. E a origem dos jogadores na internet é o **teu IP de casa**, que
+  fica registado nos logs do jogo e no do voice chat.
+- **Melhor:** é forwarding do router, não um serviço de terceiros. Não há
+  nenhuma empresa a meio, e o IP é fixo, o que permite whitelist por IP se
+  algum dia for preciso.
+
+**O que protege o Minecraft:**
 
 | | |
 |---|---|
-| `online-mode` | **`true`** — e o log mostra o `User Authenticator` a resolver o UUID, ou seja autenticação Mojang a sério. **Só contas pagas entram.** |
-| `enforce-secure-profile` | `true` |
-| `white-list` | **`true`** |
-| `enforce-whitelist` | **`false`** |
-| whitelist | **`whitelist.json`, na raiz do servidor, 7 pessoas** |
-| `server-ip` | vazio → 25565 escuta em todas as interfaces |
-| `banned-players.json` | `[]` |
-| ops | só o dono |
+| `online-mode=true` | **só contas Mojang legítimas entram** |
+| whitelist | 7 jogadores, confirmada pelo próprio servidor |
+| `enforce-secure-profile=true` | |
 
-**A whitelist está a funcionar.** Perguntou-se ao próprio servidor, pela
-consola:
+Ou seja: para entrar, um desconhecido precisa de uma conta do Minecraft paga
+**e** estar na whitelist. A whitelist é a porta, e a autenticação Mojang é a
+segunda tranca.
 
-```
-There are 7 whitelisted player(s): <os nomes dos sete, omitidos>
-```
+**O que NÃO está protegido: o voice chat.**
 
-E o arranque regista:
+O `voicechat-server.properties` não tem **nenhuma chave de autenticação** — nem
+token, nem password. `bind_address` está vazio, ou seja, escuta em todas as
+interfaces, e a porta está encaminhada para a internet em TCP **e** UDP. Não
+existe config de cliente no servidor a exigir nada.
 
-```
-[<jogador>: Added <jogador> to the whitelist]
-[<jogador>: Added <outro jogador> to the whitelist]
-[<jogador>: Whitelist is now turned on]
-```
+**Assumir que um desconhecido consegue entrar e falar com os teus amigos** até
+se provar o contrário. As opções são: deixar de encaminhar a 24454 (o voice
+chat funciona dentro da LAN sem isso, mas os amigos que entram de fora
+precisam), ou pôr token nos clientes dos amigos, ou aceitar e saber que é o
+que está.
 
-**Um erro meu, e já vai em três:** procurei o ficheiro com o nome
-`white-list.json`, com hífen, e o ficheiro chama-se `whitelist.json`. Concluí
-"a whitelist não está a bloquear ninguém" a partir de um ficheiro que não
-encontrei por causa de um hífen. **Estava a funcionar, com 7 pessoas, o tempo
-inteiro.** O servidor é a fonte de verdade e tinha-me dito logo se eu lhe
-tivesse perguntado, em vez de ir aos ficheiros.
+**O `afk-bot-mod` está instalado sem configuração**, ou seja, com as
+predefinições: quem está na whitelist pode criar bots que ficam ligados. Num
+servidor em casa isso prende CPU e banda sem o dono notar.
 
-`enforce-whitelist=false` fica por explicar — é uma segunda chave com um nome
-quase igual, e em 26.3 não se sabe qual das duas manda sem experimentar. Mas
-como a whitelist está obviously a ser aplicada, a que manda é a outra.
+### 6.4 O script de instalação falhou por um pacote
 
-**Que portas o túnel expõe não se descobre nesta máquina.** O log do
-`playitd` (que é legível) só regista o canal de controlo e os keepalives — a
-palavra "tunnel" não aparece uma única vez em 1.7 MB. A definição dos túneis
-vive no dashboard da playit, na conta, não em disco.
+O primeiro `apt-get install` levava `libu2f-udev`, que **não existe no Ubuntu
+26.04**. O apt é transaccional: uma dependência em falta aborta o pacote
+inteiro, e ficou **zero** bibliotecas instaladas — o script confirmou que as 15
+continuavam em falta.
 
-O que se pode dizer: as únicas portas locais a escutar em todas as interfaces
-são **25565** e **22 (SSH)**. A 25565 está confirmada exposta. **Se o SSH
-também estiver, isso é grave** e é a primeira coisa a ver no dashboard.
+A segunda versão verifica cada pacote com `apt-cache show` antes, salta os que
+não existem, e instala **um a um**, para que uma falha não derrube as outras.
+`libu2f-udev` foi para fora: é suporte de chaves FIDO/U2F, que o Chromium não
+precisa.
 
-**Um erro meu, registado:** a preocupação inicial vinha de ver
-`online-mode=false` e `white-list=false` — mas isso é o servidor de testes no
-Windows. O de Linux está bem neste aspecto. A preocupação certa, e que eu não
-tinha, é o túnel.
-
-### 6.4 O backup de hoje foi verificado
+### 6.5 O backup de hoje foi verificado
 
 A primeira verificação que fiz deu um susto falso: procurei `region/`,
 `playerdata/` e `stats.dat`, que é o layout de mundo **antes** de 1.21. O 26.3
@@ -265,7 +264,7 @@ e restaurar, e isso não se faz.
 
 **Nada foi apagado.** O backup de ontem continua lá, à espera de ordem.
 
-### 6.5 O que foi feito ao servidor, e o que quase correu mal
+### 6.6 O que foi feito ao servidor, e o que quase correu mal
 
 O servidor foi parado com **graça**, pela consola do próprio jogo
 (`printf 'stop' > console.fifo`), que é melhor do que `kill` porque o mundo
@@ -296,7 +295,7 @@ nos dois lados, e o índice abre-se no Windows.
 O que **não** se provou: que o Minecraft consiga restaurar este tarball. Isto foi
 lido e comparado; a prova a sério é parar, restaurar e arrancar, e não se fez.
 
-### 6.6 O que continua pendente
+### 6.7 O que continua pendente
 
 - **A partição de 66.9 GB**: não montada, não formatada. A linha do `fstab`
   que a montaria aponta para `nvme0n1p5`, que não existe; a partição real é

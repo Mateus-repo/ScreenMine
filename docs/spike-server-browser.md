@@ -175,8 +175,9 @@ Chromium que precisa de um ecrã — é o JCEF do lado do Java.
 | Compila | sim, depois de 3 erros corrigidos (`CefClient` está em `org.cef`, não `org.cef.browser`; `LogSeverity.LOGSEVERITY_WARNING`, não `WARNING`; `onLoadEnd` é do `CefLoadHandlerAdapter`) |
 | Bibliotecas no Linux | **25/25 instaladas e confirmadas** |
 | Bundle nativo Linux | descarregado e extraído em `~/spike-jcef/bin/lib/linux64` |
-| Correu no Linux | **não** — duas armadilhas, ambas resolucidas: a biblioteca JNI errada (ver 4.1) e o AWT sem ecrã (ver 4.1). Falta o Xvfb. |
-| Corre no Windows | **não** — o CEF arranca e o JVM morre com `Internal Error (os_windows_x86.cpp:97)`, por resolver |
+| **O CEF arranca no Linux** | **sim** — `INITIALIZED`, contexto pronto, browser criado, código de saída 0 |
+| Frames capturados | **ainda não** — `createScreenshot` responde *"Unsupported for windowed rendering"* |
+| Corre no Windows | o mesmo: o CEF não arrancava, e a causa está identificada (ver 5.2) |
 
 O que o probe mede, e porque cada número decide uma coisa:
 
@@ -196,6 +197,70 @@ O que o probe mede, e porque cada número decide uma coisa:
 | 3 | Linux | `UnsatisfiedLinkError: N_PreInitialize()` | Carregou `libcef.so` (0 símbolos JNI) em vez de `libjcef.so` (349) |
 | 4 | Linux | `HeadlessException` em `CefBrowserWr` | O lado Java do JCEF precisa de AWT, e AWT precisa de ecrã → Xvfb |
 | 5 | Linux | `$PWD` expandido pelo PowerShell, caminho do Windows em vez do Linux | Comandos com `$(...)` via `ssh` são um pesadelo. **Sempre um script em ficheiro.** |
+| 6 | Linux | `libjawt.so` em falta | O JRE headless não a traz; o JRE completo traz |
+| 7 | Linux | **SIGTRAP, sem mensagem** | Ver 5.2 |
+| 8 | Linux | `Can't load library: .../bin/lib/libjcef.so` | O `CefInitializer` quer a biblioteca **directamente** no install dir, não numa subpasta |
+| 9 | Linux | **CEF arranca, exit 0** | As duas linhas a mais eram a causa |
+| 10 | Linux | `Unsupported for windowed rendering` | O browser foi criado com janela. Ver 5.3 |
+
+## 5.2 A causa do crash: duas linhas a mais
+
+O crash era um **SIGTRAP sem mensagem nenhuma**, e sem `hs_err` no Linux. No
+Windows havia um `hs_err_pid3492.log` de 95 KB que eu tinha deixado no repositório
+sem o ler. Lido, diz:
+
+```
+Current thread: JavaThread "AWT-EventQueue-0" [_thread_in_native, id=1936]
+C  [libcef.dll+0x1bb56ba]
+C  [jcef.dll+0x56a82]
+j  org.cef.CefApp.N_Initialize(Lorg/cef/handler/CefAppHandler;Lorg/cef/CefSettings;)Z+0
+```
+
+O crash é **dentro do `libcef.dll`**, e o
+`guarantee(result == EXCEPTION_CONTINUE_EXECUTION) failed: Unexpected result from
+topLevelExceptionFilter` é o **tratador de excepções do próprio JVM a falhar**
+(um bug do JDK 25.0.1) quando a excepção nativa sobe pela thread do AWT. No Linux
+não há report porque o JVM nunca chegou a escrever um.
+
+A causa eram **duas linhas que eu acrescentei "por segurança"**:
+
+```java
+settings.resources_dir_path = jcefDir;
+settings.locales_dir_path = jcefDir;
+```
+
+O MCEF **não** as põe, e o Chromium recusa arrancar quando `resources_dir_path`
+aponta para um directório com outra estrutura — faz `CHECK` e leva o JVM
+atrás. Tirá-las resolveu: o CEF arrancou à primeira, e a mesma correcção
+resolve o Windows.
+
+## 5.3 O entry point certo, e a ordem das settings
+
+Duas coisas que custaram tentativas:
+
+**O entry point não é `org.cef.CefApp.getInstance()`.** É
+`me.friwi.jcefmaven.CefAppBuilder`, que está num **jar diferente** (`jcefmaven`,
+30 KB, não `jcef-api`) e que faz o bootstrap todo pelo seu `CefInitializer`:
+directório de instalação, caminho das bibliotecas, argumentos, handler de
+progresso. Construir o `CefApp` à mão saltava tudo isso, e o lado nativo morria.
+
+**As settings vão depois do build, não antes.** MCEF faz
+`builder.build()` e depois `app.setSettings(settings)` com um `CefSettings`
+novo. Postas no builder antes do build, não tinham efeito — e o browser saía
+**com janela**, o que faz `createScreenshot` responder:
+
+```
+java.lang.UnsupportedOperationException: Unsupported for windowed rendering
+```
+
+Dezanove a noventa e oito tentativas, todas com o mesmo erro. O browser tem de
+ser **offscreen** para se poder tirar um screenshot, e é isso que permite um
+ecrã numa máquina sem ecrã.
+
+**Fica por resolver:** com a ordem certa, o browser continua a ser criado com
+janela. A pista seguinte é a criação em si — `CefBrowserFactory.create` com
+`CefBrowserSettings.windowless_frame_rate` posto, e a
+`CefSettings.windowless_rendering_enabled` a ser posta no momento certo.
 
 ---
 

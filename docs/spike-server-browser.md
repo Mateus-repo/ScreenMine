@@ -179,10 +179,10 @@ Isto é prioridade acima do spike e foi medido, não suposto.
 **Prova de que é alcançável de fora:**
 
 ```
-[09:33:33] TheDarkTruther[/84.91.103.164:64015] logged in with entity id 393236
+[09:33:33] <jogador>[/<ip publico de um jogador>:64015] logged in with entity id 393236
 ```
 
-`84.91.103.164` é um endereço público. Portanto o `playitd` está a fazer túnel da
+O endereço de origem é público, não da rede local. Portanto o `playitd` está a fazer túnel da
 porta 25565 para a internet, e o servidor **não está só na rede de casa**.
 
 **O que está ligado:**
@@ -193,17 +193,36 @@ porta 25565 para a internet, e o servidor **não está só na rede de casa**.
 | `enforce-secure-profile` | `true` |
 | `white-list` | **`true`** |
 | `enforce-whitelist` | **`false`** |
-| `white-list.json` | **não existe em lado nenhum** |
+| whitelist | **`whitelist.json`, na raiz do servidor, 7 pessoas** |
 | `server-ip` | vazio → 25565 escuta em todas as interfaces |
 | `banned-players.json` | `[]` |
 | ops | só o dono |
 
-**A whitelist não está a bloquear ninguém.** Está ligada no ficheiro, o ficheiro
-não existe, e mesmo assim as entradas acontecem. Deve ser porque
-`enforce-whitelist=false` é a chave que manda em 26.3 e `white-list=true` é a
-outra — mas isso é uma leitura, não uma certeza, e há de se resolver numa das
-duas maneiras: confirmar qual das duas chaves manda e pôr a certa, ou meter
-gente na whitelist à mão.
+**A whitelist está a funcionar.** Perguntou-se ao próprio servidor, pela
+consola:
+
+```
+There are 7 whitelisted player(s): <os nomes dos sete, omitidos>
+```
+
+E o arranque regista:
+
+```
+[<jogador>: Added <jogador> to the whitelist]
+[<jogador>: Added <outro jogador> to the whitelist]
+[<jogador>: Whitelist is now turned on]
+```
+
+**Um erro meu, e já vai em três:** procurei o ficheiro com o nome
+`white-list.json`, com hífen, e o ficheiro chama-se `whitelist.json`. Concluí
+"a whitelist não está a bloquear ninguém" a partir de um ficheiro que não
+encontrei por causa de um hífen. **Estava a funcionar, com 7 pessoas, o tempo
+inteiro.** O servidor é a fonte de verdade e tinha-me dito logo se eu lhe
+tivesse perguntado, em vez de ir aos ficheiros.
+
+`enforce-whitelist=false` fica por explicar — é uma segunda chave com um nome
+quase igual, e em 26.3 não se sabe qual das duas manda sem experimentar. Mas
+como a whitelist está obviously a ser aplicada, a que manda é a outra.
 
 **Que portas o túnel expõe não se descobre nesta máquina.** O log do
 `playitd` (que é legível) só regista o canal de controlo e os keepalives — a
@@ -245,3 +264,46 @@ lido como NBT e comparado com o mundo vivo; a prova a sério é parar o servidor
 e restaurar, e isso não se faz.
 
 **Nada foi apagado.** O backup de ontem continua lá, à espera de ordem.
+
+### 6.5 O que foi feito ao servidor, e o que quase correu mal
+
+O servidor foi parado com **graça**, pela consola do próprio jogo
+(`printf 'stop' > console.fifo`), que é melhor do que `kill` porque o mundo
+fica gravado por inteiro: o log diz "Saving worlds" e "Saving chunks for level".
+
+**A primeira tentativa de backup encheu o disco.** O tarball do mundo foi
+truncado com `No space left on device` e a raiz ficou a 100 KB livres. O tar só
+lê, portanto **o mundo não foi tocado** — 1692 chunks, zero vazios, `level.dat`
+com NBT válido, confirmado depois. O ficheiro partido foi apagado (provava-se
+mau com `gzip -t`) e o espaço voltou.
+
+Causa: o mundo cresceu de 4.1 para 4.8 GB com o jogo, e o tarball comprimido
+precisava de ~2.5 GB com 2.3 GB livres. **Comprimir não chega** — o mundo tem
+chunks que já não comprimem.
+
+O que ficou feito, e verificado:
+
+| | |
+|---|---|
+| `servidor-completo_2026-10-21_00-03.tar.gz` | **2.5 GB, `gzip -t` OK, 2006 entradas, 1692 `.mca` — exactamente os do mundo vivo** |
+| `config_2026-10-21_00-03.tar.gz` | 27 MB, `gzip -t` OK, com a whitelist e os ops |
+| `world_2026-10-20_06-00` (diário) | 4.5 GB, 1613 chunks, 0 vazios |
+| backup diário de 19 | **apagado**, com o de 20 verificado antes, como combinado |
+
+Os dois tarballs foram copiados para o PC pessoal e conferidos por SHA256: idêntico
+nos dois lados, e o índice abre-se no Windows.
+
+O que **não** se provou: que o Minecraft consiga restaurar este tarball. Isto foi
+lido e comparado; a prova a sério é parar, restaurar e arrancar, e não se fez.
+
+### 6.6 O que continua pendente
+
+- **A partição de 66.9 GB**: não montada, não formatada. A linha do `fstab`
+  que a montaria aponta para `nvme0n1p5`, que não existe; a partição real é
+  `nvme1n1p5`, pelo UUID `83505831-b7c2-467a-af6e-1e652d4d8d56`. Montar em
+  só-leitura precisa de root, e não se sabe se tem dados.
+- **As 13 bibliotecas do Chromium** e o `sudo` com senha.
+- **Que portas o playit expõe** — só o dashboard responde.
+- **`enforce-whitelist`** — qual das duas chaves é que manda.
+- **O probe no Linux** — nem sequer arrancou lá; no Windows morre em código
+  nativo por resolver.

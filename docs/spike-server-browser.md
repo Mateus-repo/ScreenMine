@@ -78,23 +78,35 @@ lugar. Não se sabe se tem dados — ler isso precisa de root.
 
 ## 3. O que falta na máquina para correr Chromium
 
-13 bibliotecas que o Chromium usa e que não lá estão:
+**Resolvido.** As 25 bibliotecas estão instaladas e confirmadas:
 
 ```
-libatk-1.0.so.0        libpango-1.0.so.0     libXcomposite.so.1
-libatk-bridge-2.0.so.0 libpangocairo-1.0.so.0 libXdamage.so.1
-libatspi2.0.so.0       libcairo.so.2         libXfixes.so.3
-libgbm.so.1            libxkbcommon.so.0     libXrandr.so.2
-libxshmfence.so.1      libgl.so.1            libegl.so.1
+libatk-1.0.so.0      libatk-bridge-2.0.so.0  libatspi.so.0
+libgbm.so.1          libxkbcommon.so.0       libpango-1.0.so.0
+libpangocairo-1.0.so.0  libcairo.so.2        libXcomposite.so.1
+libXdamage.so.1      libXfixes.so.3          libXrandr.so.2
+libxshmfence.so.1    libXext.so.6            libX11.so.6
+libGL.so.1           libEGL.so.1             libGLESv2.so.2
+libxcb.so.1          libnss3.so              libnspr4.so
+libdbus-1.so.3       libcups.so.2            libasound.so.2
 ```
 
-Todas existem em pacotes Ubuntu normais. O script está em
-`~/spike-install-libs.sh` no servidor, à espera de ser corrido com `sudo`
-(ao utilizador do servidor falta-lhe a senha de sudo, e sem `-n`).
+A primeira tentativa **não instalou nada**: o `apt-get install` levava
+`libu2f-udev`, que não existe no Ubuntu 26.04, e o apt é transaccional — um
+pacote em falta aborta o lote inteiro. A segunda versão verifica cada pacote
+com `apt-cache show` e instala um a um.
 
-**Não é preciso ecrã virtual.** O JCEF faz *offscreen rendering*
-(`CefSettings.windowless_rendering_enabled`), que é exactamente para isto:
-desenha sem janela. Xvfb não é necessário.
+O bundle nativo do JCEF para Linux também está em
+`~/spike-jcef/bin/lib/linux64` (147 MB descarregados, extraídos).
+
+**Uma confusão minha que vale a pena registar:** o verificador dizia que
+`libgl.so.1` e `libegl.so.1` faltavam. Não faltavam — escrevi o nome em
+minúsculas e os ficheiros são `libGL.so.1` e `libEGL.so.1`. As 25 estavam lá
+desde o início.
+
+**O bundle do JCEF também traz `chrome-sandbox`**, que é o binário de sandbox
+do Chromium. Existe, mas o JCEF passa `--no-sandbox` na mesma (verificado nos
+processos reais, no Windows).
 
 ---
 
@@ -127,6 +139,32 @@ CefBrowserFactory.create(client, url, /*isPopup*/false, /*createImmediately*/tru
                          null, browserSettings)
 ```
 
+## 4.1 Duas armadilhas que o Linux mostrou
+
+**A biblioteca JNI não é a que o JCEF carrega sozinho.** O loader por omissão
+faz `System.loadLibrary("cef")`, que no Linux resolve para `libcef.so` — o core
+do Chromium. A biblioteca JNI é **`libjcef.so`**, e a diferença não é de
+detalhe:
+
+```
+nm -D --defined-only libjcef.so | grep -c Java_org_cef   ->  349
+nm -D --defined-only libcef.so  | grep -c Java_org_cef   ->    0
+```
+
+Com a biblioteca errada carregada, todas as chamadas nativas falham com
+`UnsatisfiedLinkError: 'boolean org.cef.CefApp.N_PreInitialize()'`. A solução
+é `SystemBootstrap.setLoader(...)` a carregar `libjcef.so` (ou `jcef.dll` no
+Windows) por caminho absoluto.
+
+**O lado Java do JCEF precisa de AWT, e AWT precisa de um ecrã.** Isto
+contra-intuitivo: o Chromium desenha *offscreen*, mas `CefBrowserWr` chama
+`MouseInfo.getNumberOfButtons()`, e isso **lança `HeadlessException` em modo
+headless**. Com `java.awt.headless=true` o probe morre ali; sem isso, sem
+`DISPLAY`, o AWT não consegue ligar-se ao X11.
+
+Portanto: **Xvfb é necessário**, mesmo com renderização offscreen. Não é o
+Chromium que precisa de um ecrã — é o JCEF do lado do Java.
+
 ---
 
 ## 5. Estado do spike
@@ -135,8 +173,10 @@ CefBrowserFactory.create(client, url, /*isPopup*/false, /*createImmediately*/tru
 |---|---|
 | Probe escrito | `tools/SpikeServerBrowser.java` |
 | Compila | sim, depois de 3 erros corrigidos (`CefClient` está em `org.cef`, não `org.cef.browser`; `LogSeverity.LOGSEVERITY_WARNING`, não `WARNING`; `onLoadEnd` é do `CefLoadHandlerAdapter`) |
-| Corre no Windows | **não** — o CEF arrancou e o JVM morreu com um erro interno de código nativo. Ainda por perceber. |
-| Corre no Linux | não tentado: falta o `sudo` para as bibliotecas |
+| Bibliotecas no Linux | **25/25 instaladas e confirmadas** |
+| Bundle nativo Linux | descarregado e extraído em `~/spike-jcef/bin/lib/linux64` |
+| Correu no Linux | **não** — duas armadilhas, ambas resolucidas: a biblioteca JNI errada (ver 4.1) e o AWT sem ecrã (ver 4.1). Falta o Xvfb. |
+| Corre no Windows | **não** — o CEF arranca e o JVM morre com `Internal Error (os_windows_x86.cpp:97)`, por resolver |
 
 O que o probe mede, e porque cada número decide uma coisa:
 
@@ -146,6 +186,16 @@ O que o probe mede, e porque cada número decide uma coisa:
    se é preciso FFmpeg.**
 4. Com que frequência o frame muda. Uma página parada só precisa de ser enviada
    quando muda.
+
+## 5.1 O registo das tentativas, para não se perder
+
+| Tentativa | Onde | O que happened | O que se aprendeu |
+|---|---|---|---|
+| 1 | Windows | `Internal Error (os_windows_x86.cpp:97)`, o JVM morre em código nativo | Por resolver. É o que trava o uso como desktop de jogo. |
+| 2 | Windows | `UnsatisfiedLinkError: no cef in java.library.path` | O JCEF quer uma biblioteca que o `java.library.path` não tinha |
+| 3 | Linux | `UnsatisfiedLinkError: N_PreInitialize()` | Carregou `libcef.so` (0 símbolos JNI) em vez de `libjcef.so` (349) |
+| 4 | Linux | `HeadlessException` em `CefBrowserWr` | O lado Java do JCEF precisa de AWT, e AWT precisa de ecrã → Xvfb |
+| 5 | Linux | `$PWD` expandido pelo PowerShell, caminho do Windows em vez do Linux | Comandos com `$(...)` via `ssh` são um pesadelo. **Sempre um script em ficheiro.** |
 
 ---
 
@@ -304,5 +354,8 @@ lido e comparado; a prova a sério é parar, restaurar e arrancar, e não se fez
 - **As 13 bibliotecas do Chromium** e o `sudo` com senha.
 - **Que portas o playit expõe** — só o dashboard responde.
 - **`enforce-whitelist`** — qual das duas chaves é que manda.
-- **O probe no Linux** — nem sequer arrancou lá; no Windows morre em código
-  nativo por resolver.
+- **O probe no Linux** — falta o Xvfb (`bash ~/spike-install-xvfb.sh`). As
+  bibliotecas e o bundle nativo já lá estão; as duas armadilhas de 4.1 estão
+  tratadas no código, mas o probe ainda não chegou a correr.
+- **A queda nativa no Windows** (`os_windows_x86.cpp:97`) — por resolver. Se o
+  mod tiver de correr no PC de cada jogador, isto é uma Bomba-relógio.

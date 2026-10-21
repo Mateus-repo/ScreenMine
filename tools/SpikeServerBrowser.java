@@ -5,6 +5,7 @@ import org.cef.CefSettings;
 import org.cef.browser.CefBrowser;
 import org.cef.browser.CefBrowserFactory;
 
+import org.cef.SystemBootstrap;
 import org.cef.handler.CefAppHandlerAdapter;
 import org.cef.handler.CefLoadHandlerAdapter;
 
@@ -81,6 +82,38 @@ public final class SpikeServerBrowser {
         settings.resources_dir_path = jcefDir;
         settings.locales_dir_path = jcefDir;
         settings.log_severity = CefSettings.LogSeverity.LOGSEVERITY_WARNING;
+
+        // Which native library to load, said out loud.
+        //
+        // The default loader calls System.loadLibrary("cef"), which on Linux
+        // resolves to libcef.so. That is the Chromium core: 349 of the 349
+        // Java_org_cef symbols are in libjcef.so and libcef.so has none, so
+        // the JVM loads a library with no JNI in it and every native call
+        // fails with UnsatisfiedLinkError on N_PreInitialize. On Windows the
+        // same thing happens with jcef.dll against libcef.dll.
+        //
+        // So: load the JNI library by absolute path, and fall back to the
+        // default behaviour rather than dying if the guess about the platform
+        // is wrong.
+        final String jcefDirFinal = jcefDir;
+        SystemBootstrap.setLoader(new SystemBootstrap.Loader() {
+            @Override
+            public void loadLibrary(String name) {
+                String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+                String file = os.contains("win") ? "jcef.dll"
+                        : os.contains("mac") ? "libjcef.dylib"
+                        : "libjcef.so";
+                File candidate = new File(jcefDirFinal, file);
+                if (candidate.isFile()) {
+                    System.out.println("  [cef] a carregar " + candidate.getAbsolutePath());
+                    System.load(candidate.getAbsolutePath());
+                    return;
+                }
+                System.out.println("  [cef] " + file + " nao esta em " + jcefDirFinal
+                        + ", a tentar pelo nome");
+                System.loadLibrary(name);
+            }
+        });
 
         // No runMessageLoop() in this build: the embedder drives the pump itself
         // and CEF asks to be called back through onScheduleMessagePumpWork.

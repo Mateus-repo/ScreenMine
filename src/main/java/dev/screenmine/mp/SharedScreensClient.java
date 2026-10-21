@@ -466,6 +466,24 @@ public final class SharedScreensClient {
             }
         });
 
+        // A refusal. The server says no and says why, so the player is told
+        // instead of watching a button do nothing.
+        ClientPlayNetworking.registerGlobalReceiver(Payloads.ScreenRefused.TYPE, (ref, context) -> {
+            var mc = net.minecraft.client.Minecraft.getInstance();
+            if (mc == null) {
+                return;
+            }
+            if ("server-screen-limit".equals(ref.detail())) {
+                // The whole-server budget. Say what it is and that it is
+                // deliberate, or the player thinks the feature is broken.
+                say(mc, Lang.t("chat.share.serverlimit",
+                        dev.screenmine.mp.ScreenNetwork.limits().maxTotal()));
+            } else {
+                say(mc, Lang.t("chat.share.refused", ref.detail()));
+            }
+            LOG.info("the server refused a shared screen: {}", ref.detail());
+        });
+
         // A shared screen lives exactly as long as its owner. The server removes
         // them when the owner leaves; this is the belt to that braces, for the
         // case where the connection drops before the last message arrives.

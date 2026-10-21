@@ -48,6 +48,21 @@ public final class SharedScreens {
     private final Set<String> allowedHosts;
     private final int maxPerPlayer;
 
+    /**
+     * How many shared screens the whole server may have at once.
+     *
+     * <p>Different from {@code maxPerPlayer}, and the difference matters. The
+     * per-player limit is a fairness rule: one player may not flood the world
+     * with screens. This one is a budget: every shared screen is a real browser
+     * on the server, and a browser costs hundreds of megabytes and a slice of a
+     * core whether one player is watching or ten.
+     *
+     * <p>The default is one. A server with one browser on it can show the same
+     * page to everybody, which is the whole point; more than that is a decision
+     * the owner of the machine has to make on purpose.
+     */
+    private final int maxTotal;
+
     private final Map<UUID, Screen> byId = new LinkedHashMap<>();
     private final Map<UUID, List<UUID>> byOwner = new HashMap<>();
 
@@ -82,8 +97,18 @@ public final class SharedScreens {
     }
 
     public SharedScreens(Set<String> allowedHosts, int maxPerPlayer) {
+        this(allowedHosts, maxPerPlayer, ScreenRules.MAX_SCREENS_TOTAL_DEFAULT);
+    }
+
+    public SharedScreens(Set<String> allowedHosts, int maxPerPlayer, int maxTotal) {
         this.allowedHosts = Set.copyOf(allowedHosts);
         this.maxPerPlayer = maxPerPlayer;
+        this.maxTotal = Math.max(0, maxTotal);
+    }
+
+    /** How many shared screens the whole server may have at once. */
+    public int maxTotal() {
+        return maxTotal;
     }
 
     public Set<String> allowedHosts() {
@@ -140,6 +165,14 @@ public final class SharedScreens {
         if (countOf(player) >= maxPerPlayer) {
             return new ScreenRules.Rejection("too-many-screens",
                     maxPerPlayer + " is the limit");
+        }
+        if (byId.size() >= maxTotal) {
+            // The whole-server budget. Checked after the per-player quota so
+            // that a player who is over their own limit hears about their own
+            // limit, which is the more useful of the two messages.
+            return new ScreenRules.Rejection("server-screen-limit",
+                    maxTotal + (maxTotal == 1 ? " screen in the whole server"
+                                              : " screens in the whole server"));
         }
         ScreenRules.Rejection bad = ScreenRules.checkDimension(dimension, playerDimension);
         if (bad != null) {

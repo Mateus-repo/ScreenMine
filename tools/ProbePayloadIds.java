@@ -23,5 +23,6 @@ public class ProbePayloadIds {
         System.out.println("screen_move    -> " + Payloads.ScreenMove.TYPE.id());
         System.out.println("playback       -> " + Payloads.Playback.TYPE.id());
         System.out.println("screen_playback-> " + Payloads.ScreenPlayback.TYPE.id());
+        System.out.println("screen_refused-> " + Payloads.ScreenRefused.TYPE.id());
     }
 }

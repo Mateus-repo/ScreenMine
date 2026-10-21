@@ -7,6 +7,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Properties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Everything a player can change without recompiling, kept in
@@ -28,11 +30,27 @@ import java.util.Properties;
  *       default: no address means the mod simply never opens a socket, which is
  *       the normal single-player case</li>
  *   <li>{@code server.port} — companion server port</li>
+ *   <li>{@code mp.maxScreens} — how many shared screens the whole server may
+ *       have at once, across all players. The default is {@code 1}. Each one is
+ *       a real browser, so this is also the server's memory and CPU budget for
+ *       them</li>
  *   <li>{@code debug.codecs} — {@code 1} makes the browser report which media
  *       codecs it can decode into the log; {@code 0} (the default) disables it</li>
  * </ul>
  */
 public final class Settings {
+
+    /**
+     * This class's own logger.
+     *
+     * <p>It used to borrow {@code ScreenMineClient.LOG}, and that was a
+     * landmine: the server reads this file too, to know how many shared screens
+     * the whole server may have, and the server entrypoint is explicit that
+     * nothing on the server may touch a client class - loading one takes a
+     * dedicated server down. The borrow was only reached when the file could
+     * not be read, which is exactly the moment a server cannot afford to die.
+     */
+    private static final Logger LOG = LoggerFactory.getLogger("ScreenMine");
 
     private static final Path FILE = Paths.get("config", "screenmine_mp.properties");
 
@@ -72,6 +90,13 @@ public final class Settings {
             # screens that other players placed, so joining a server cannot make
             # this machine open a page somebody else chose.
             mp.acceptRemote=0
+            #
+            # How many shared screens the whole server may have at once, across
+            # every player. The default is 1: one browser on the server, and
+            # everybody looks at the same one. Each shared screen is a real
+            # browser, so this is also the limit on how much memory and CPU the
+            # server spends on them. Raise it only if the server can take it.
+            mp.maxScreens=1
             #
             # Diagnostics. Set debug.codecs to 1 and load any page to have the
             # browser report which media codecs it can decode, into latest.log
@@ -138,7 +163,7 @@ public final class Settings {
                 PROPS.load(in);
             }
         } catch (IOException | RuntimeException ex) {
-            ScreenMineClient.LOG.warn("could not read {}: {}", FILE, ex.toString());
+            LOG.warn("could not read {}: {}", FILE, ex.toString());
         }
     }
 
@@ -149,7 +174,7 @@ public final class Settings {
                 PROPS.store(out, "ScreenMine (Multiplayer) settings");
             }
         } catch (IOException | RuntimeException ex) {
-            ScreenMineClient.LOG.warn("could not write {}: {}", FILE, ex.toString());
+            LOG.warn("could not write {}: {}", FILE, ex.toString());
         }
     }
 }

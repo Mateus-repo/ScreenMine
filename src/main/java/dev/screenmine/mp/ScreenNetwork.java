@@ -34,8 +34,13 @@ final class ScreenNetwork {
 
     /** Registers the client-to-server receivers. */
     static void register() {
+        // The whole-server budget comes from the config, so the owner of the
+        // machine decides how many browsers the server may hold. Read once, at
+        // startup, like everything else in Settings.
+        int maxTotal = dev.screenmine.Settings.getInt(
+                "mp.maxScreens", ScreenRules.MAX_SCREENS_TOTAL_DEFAULT);
         screens = new SharedScreens(ScreenRules.DEFAULT_ALLOWED_HOSTS,
-                ScreenRules.MAX_SCREENS_PER_PLAYER);
+                ScreenRules.MAX_SCREENS_PER_PLAYER, maxTotal);
 
         // Place. The client names no id; the server invents one and hands it back.
         ServerPlayNetworking.registerGlobalReceiver(Payloads.Place.TYPE, (place, context) -> {
@@ -233,6 +238,14 @@ final class ScreenNetwork {
                                String what, ScreenRules.Rejection why) {
         log(server, what + "-refused", player, null,
                 why == null ? "?" : why.toString());
+        // Tell the player too. A refusal that only reaches the server log is a
+        // button that does nothing, and the whole-server screen limit makes
+        // that the normal case rather than an edge case.
+        if (ServerPlayNetworking.canSend(player, Payloads.ScreenRefused.TYPE)) {
+            ServerPlayNetworking.send(player, new Payloads.ScreenRefused(
+                    what, why == null ? null : why.code(),
+                    screens == null ? 0 : screens.maxTotal()));
+        }
     }
 
     private static void log(MinecraftServer server, String what, ServerPlayer player,
@@ -243,6 +256,16 @@ final class ScreenNetwork {
         org.slf4j.LoggerFactory.getLogger("ScreenMine/mp")
                 .info("{} {} -> {} on {} ({} screens){}{}",
                         what, id, "?", "server", screens.count(), screenPart, notePart);
+    }
+
+    /**
+     * The limits the server is running with, for the client to say out loud.
+     *
+     * <p>Only the refusal message needs it, and only so the player can be told
+     * what the limit is rather than just that something was refused.
+     */
+    static SharedScreens limits() {
+        return screens;
     }
 
     static Set<String> hosts() {

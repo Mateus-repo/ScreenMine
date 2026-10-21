@@ -1,3 +1,4 @@
+import dev.screenmine.mp.Payloads;
 import dev.screenmine.mp.RateLimiter;
 import dev.screenmine.mp.ScreenRules;
 import dev.screenmine.mp.SharedScreens;
@@ -38,7 +39,8 @@ public class ProbeSharedScreens {
         dimension();
         distance();
         move();
-
+        wholeServerCapChecks();
+        refusalsAreToldChecks();
         System.out.println();
         System.out.println(pass + " passaram, " + fail + " falharam");
         System.exit(fail == 0 ? 0 : 1);
@@ -390,7 +392,11 @@ public class ProbeSharedScreens {
     }
 
     private static SharedScreens fresh(int maxPerPlayer) {
-        return new SharedScreens(ScreenRules.DEFAULT_ALLOWED_HOSTS, maxPerPlayer);
+        // A generous whole-server cap on purpose: these tests are about the
+        // per-player rules, and the whole-server cap would otherwise refuse the
+        // second screen and change what they are measuring. The cap has its own
+        // tests, in wholeServerCapChecks.
+        return new SharedScreens(ScreenRules.DEFAULT_ALLOWED_HOSTS, maxPerPlayer, 100);
     }
 
     private static final String DIM = "minecraft:overworld";
@@ -484,4 +490,90 @@ public class ProbeSharedScreens {
     private static String shortUrl(String u) {
         return u.length() > 34 ? u.substring(0, 31) + "..." : "'" + u + "'";
     }
+    // ----------------------------------------------------- whole-server cap //
+
+    private static void wholeServerCapChecks() {
+        section("tecto do servidor inteiro");
+
+        // The default is one screen for the whole server.
+        check("o tecto por omissao e' 1",
+                ScreenRules.MAX_SCREENS_TOTAL_DEFAULT == 1);
+
+        // One screen, one owner, and a second player is refused - not because of
+        // anything to do with them, but because the server's budget is gone.
+        SharedScreens one = new SharedScreens(ScreenRules.DEFAULT_ALLOWED_HOSTS, 2, 1);
+        java.util.UUID a = java.util.UUID.randomUUID();
+        java.util.UUID b = java.util.UUID.randomUUID();
+        check("o primeiro ecra e' aceite",
+                one.place(a, "A", "https://www.youtube.com/watch?v=a", "minecraft:overworld",
+                        0, 64, 0, 0f, 6f, 3.375f, 0, 64, 0, "minecraft:overworld", 0L) == null);
+        ScreenRules.Rejection why = one.place(b, "B", "https://www.youtube.com/watch?v=b",
+                "minecraft:overworld", 0, 64, 0, 0f, 6f, 3.375f, 0, 64, 0,
+                "minecraft:overworld", 1_000L);
+        check("o segundo ecra e' recusado", why != null);
+        check("com o codigo do tecto global",
+                why != null && "server-screen-limit".equals(why.code()), why);
+        check("e o servidor fica com um ecra", one.count() == 1, one.count());
+        check("e o dono do primeiro mantem-no",
+                one.isOwner(idOf(one), a));
+
+        // Two allowed, and the third is refused - from a different player, so
+        // the per-player quota is not what stopped it.
+        SharedScreens two = new SharedScreens(ScreenRules.DEFAULT_ALLOWED_HOSTS, 2, 2);
+        java.util.UUID c = java.util.UUID.randomUUID();
+        java.util.UUID d = java.util.UUID.randomUUID();
+        java.util.UUID e = java.util.UUID.randomUUID();
+        check("com tecto 2, o primeiro e' aceite",
+                two.place(c, "C", "https://www.youtube.com/watch?v=c", "minecraft:overworld",
+                        0, 64, 0, 0f, 6f, 3.375f, 0, 64, 0, "minecraft:overworld", 0L) == null);
+        check("com tecto 2, o segundo e' aceite",
+                two.place(d, "D", "https://www.youtube.com/watch?v=d", "minecraft:overworld",
+                        0, 64, 0, 0f, 6f, 3.375f, 0, 64, 0, "minecraft:overworld", 0L) == null);
+        ScreenRules.Rejection why3 = two.place(e, "E", "https://www.youtube.com/watch?v=e",
+                "minecraft:overworld", 0, 64, 0, 0f, 6f, 3.375f, 0, 64, 0,
+                "minecraft:overworld", 1_000L);
+        check("com tecto 2, o terceiro e' recusado",
+                why3 != null && "server-screen-limit".equals(why3.code()), why3);
+        check("e ficam dois", two.count() == 2, two.count());
+
+        // Zero means no shared screens at all, and it must refuse the first
+        // one rather than fall through to some default.
+        SharedScreens none = new SharedScreens(ScreenRules.DEFAULT_ALLOWED_HOSTS, 2, 0);
+        ScreenRules.Rejection why0 = none.place(a, "A", "https://www.youtube.com/watch?v=a",
+                "minecraft:overworld", 0, 64, 0, 0f, 6f, 3.375f, 0, 64, 0,
+                "minecraft:overworld", 0L);
+        check("com tecto 0, o primeiro ja e' recusado",
+                why0 != null && "server-screen-limit".equals(why0.code()), why0);
+
+        // A tecto negativo tem de ser tratado como zero, nunca como "ilimitado".
+        SharedScreens neg = new SharedScreens(ScreenRules.DEFAULT_ALLOWED_HOSTS, 2, -5);
+        check("um tecto negativo vira zero", neg.maxTotal() == 0, neg.maxTotal());
+    }
+
+    // ------------------------------------------------------- refusals told //
+
+    private static void refusalsAreToldChecks() {
+        section("a recusa chega ao jogador");
+        // A refusal that only reaches the server log is a button that does
+        // nothing. The payload has to exist and carry the limit, because the
+        // client cannot know the server's budget on its own.
+        check("existe um payload de recusa",
+                Payloads.ScreenRefused.TYPE.id().toString().endsWith("screen_refused"),
+                Payloads.ScreenRefused.TYPE.id());
+        Payloads.ScreenRefused r = new Payloads.ScreenRefused("place",
+                "server-screen-limit", 1);
+        check("o codigo passa", "place".equals(r.code()), r.code());
+        check("o detalhe passa", "server-screen-limit".equals(r.detail()), r.detail());
+        check("o limite do servidor passa", r.limit() == 1, r.limit());
+    }
+
+    // ----------------------------------------------------------------- tools //
+
+    private static java.util.UUID idOf(SharedScreens screens) {
+        for (SharedScreens.Screen s : screens.all()) {
+            return s.id();
+        }
+        throw new IllegalStateException("no screens");
+    }
+
 }

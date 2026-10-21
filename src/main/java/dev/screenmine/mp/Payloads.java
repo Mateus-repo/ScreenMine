@@ -236,6 +236,44 @@ public final class Payloads {
         }
     }
 
+    /**
+     * Server to client: that request was refused, and here is why.
+     *
+     * <p>Without this the client never hears about a refusal. It sends a
+     * request, the server says no, and the player's button does nothing at all -
+     * which is indistinguishable from the feature being broken. With the
+     * whole-server screen limit defaulting to one, the second placement is
+     * refused every time, so this is not a nicety.
+     *
+     * <p>It carries the server's own limit, because the client cannot know it:
+     * the limit is the server's budget, and the server is the only party that
+     * has it. Reading it from the client's own copy of the config would be
+     * reading a number that may not be the one the server is using.
+     */
+    public record ScreenRefused(String code, String detail, int limit)
+            implements CustomPacketPayload {
+
+        public static final Type<ScreenRefused> TYPE =
+                new Type<>(Identifier.fromNamespaceAndPath(NS, "screen_refused"));
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, ScreenRefused> CODEC =
+                StreamCodec.of(
+                        (buf, v) -> {
+                            ByteBufCodecs.STRING_UTF8.encode(buf, v.code);
+                            ByteBufCodecs.STRING_UTF8.encode(buf, v.detail == null ? "" : v.detail);
+                            buf.writeInt(v.limit);
+                        },
+                        buf -> new ScreenRefused(
+                                ByteBufCodecs.STRING_UTF8.decode(buf),
+                                ByteBufCodecs.STRING_UTF8.decode(buf),
+                                buf.readInt()));
+
+        @Override
+        public Type<ScreenRefused> type() {
+            return TYPE;
+        }
+    }
+
     /** Server to client: here is a screen, at this exact place. */
     public record ScreenAdded(UUID screenId, String owner, String url, String dimension,
                               double x, double y, double z,
@@ -335,6 +373,7 @@ public final class Payloads {
         PayloadTypeRegistryAccess.clientbound(ScreenRemoved.TYPE, ScreenRemoved.CODEC);
         PayloadTypeRegistryAccess.clientbound(ScreenNavigate.TYPE, ScreenNavigate.CODEC);
         PayloadTypeRegistryAccess.clientbound(ScreenMove.TYPE, ScreenMove.CODEC);
+        PayloadTypeRegistryAccess.clientbound(ScreenRefused.TYPE, ScreenRefused.CODEC);
         PayloadTypeRegistryAccess.logged();
     }
 

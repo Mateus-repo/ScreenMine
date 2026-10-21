@@ -22,6 +22,16 @@ public final class ScreenRules {
     /** Screens one player may have placed at once. */
     public static final int MAX_SCREENS_PER_PLAYER = 2;
 
+    /**
+     * How many shared screens the whole server may have at once, by default.
+     *
+     * <p>One. Every shared screen is a real browser on the server, and one
+     * browser is enough to show the same page to everybody - which is the whole
+     * point of the feature. More than one is a decision the owner of the
+     * machine makes on purpose, through {@code mp.maxScreens}.
+     */
+    public static final int MAX_SCREENS_TOTAL_DEFAULT = 1;
+
     /** A screen smaller than this is a speck, larger is a wall. In blocks. */
     public static final float MIN_SIZE = 1.0f;
     public static final float MAX_SIZE = 32.0f;

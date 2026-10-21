@@ -6,7 +6,6 @@ import org.cef.browser.CefBrowser;
 import org.cef.browser.CefBrowserFactory;
 
 import org.cef.SystemBootstrap;
-import org.cef.handler.CefAppHandlerAdapter;
 import org.cef.handler.CefLoadHandlerAdapter;
 
 import javax.imageio.ImageIO;
@@ -69,19 +68,12 @@ public final class SpikeServerBrowser {
         File outDir = new File(args[3]);
         outDir.mkdirs();
 
+        AtomicLong pumpRequests = new AtomicLong();
         System.out.println("=== SPICE: um browser, sem ecra ===");
         System.out.println("  jcef   : " + jcefDir);
         System.out.println("  url    : " + url);
         System.out.println("  ficheiros em : " + outDir.getAbsolutePath());
         System.out.println();
-
-        // Windowless: this is what makes a server with no display work at all.
-        CefSettings settings = new CefSettings();
-        settings.windowless_rendering_enabled = true;
-        settings.cache_path = new File(outDir, "jcef-cache").getAbsolutePath();
-        settings.resources_dir_path = jcefDir;
-        settings.locales_dir_path = jcefDir;
-        settings.log_severity = CefSettings.LogSeverity.LOGSEVERITY_WARNING;
 
         // Which native library to load, said out loud.
         //
@@ -115,10 +107,56 @@ public final class SpikeServerBrowser {
             }
         });
 
-        // No runMessageLoop() in this build: the embedder drives the pump itself
-        // and CEF asks to be called back through onScheduleMessagePumpWork.
-        AtomicLong pumpRequests = new AtomicLong();
-        CefAppHandlerAdapter handler = new CefAppHandlerAdapter(new String[0]) {
+        // Start the CEF the way MCEF starts it, which is the way that works.
+        //
+        // This is the third version of this block and the first that uses the
+        // real API. The first called CefApp.getInstance(args, settings) by hand
+        // and the JVM died with SIGTRAP and no message at all, in native code,
+        // on Linux and on Windows alike - and the JVM's own crash handler said
+        // nothing useful either. The second tried to fix the library loading and
+        // got the JNI library right, and still died in exactly the same place.
+        //
+        // The reason is that CefApp.getInstance is not the entry point. The
+        // right one is me.friwi.jcefmaven.CefAppBuilder, which is in a
+        // different jar (jcefmaven, not jcef-api) and which does the whole
+        // bootstrap through its CefInitializer step: the install directory, the
+        // library path, the arguments, the progress handler. MCEF uses it, and
+        // MCEF works - the game runs, on this exact native bundle. Building the
+        // CefApp by hand skipped all of that, and the native side died.
+        System.out.println("  a arrancar o CEF pelo CefAppBuilder...");
+        me.friwi.jcefmaven.CefAppBuilder builder = new me.friwi.jcefmaven.CefAppBuilder();
+        // The install dir is the directory that holds libjcef.so directly. The
+        // builder's CefInitializer loads it from <installDir>/libjcef.so, and
+        // pointing it at the parent gives a clean "Can't load library:
+        // .../bin/lib/libjcef.so" - which is a much better error than the one
+        // it gives when it does find the library and something else goes wrong.
+        File installDir = new File(jcefDir);
+        builder.setInstallDir(installDir);
+        System.out.println("  install dir: " + installDir);
+        // The bundle is already there. Without this the builder tries to
+        // download it.
+        builder.setSkipInstallation(true);
+        // The same three arguments MCEF passes. The autoplay one matters for
+        // video, the widevine one for DRM playback, and disable-web-security
+        // is what MCEF does, so it is what the working configuration does.
+        builder.addJcefArgs(
+                "--autoplay-policy=no-user-gesture-required",
+                "--disable-web-security",
+                "--enable-widevine-cdm");
+        // The builder owns the CefSettings. Windowless is the whole point:
+        // this is a server with no display.
+        //
+        // Deliberately NOT setting resources_dir_path and locales_dir_path.
+        // MCEF does not set them either, and the hs_err from the Windows run
+        // says the crash is inside libcef.dll during N_Initialize - the
+        // Chromium side refusing to start. Pointing those at a directory that
+        // does not have the layout Chromium expects is exactly the kind of
+        // thing that makes it CHECK-fail and take the JVM's own exception
+        // handler down with it, which is the crash we got. Let the builder
+        // work the layout out from the install dir, the way the working
+        // configuration does.
+        builder.getCefSettings().log_severity = CefSettings.LogSeverity.LOGSEVERITY_WARNING;
+        builder.setAppHandler(new me.friwi.jcefmaven.MavenCefAppHandlerAdapter() {
             @Override
             public void onScheduleMessagePumpWork(long delayMs) {
                 pumpRequests.incrementAndGet();
@@ -128,18 +166,39 @@ public final class SpikeServerBrowser {
             public void onContextInitialized() {
                 System.out.println("  [cef] contexto pronto");
             }
-        };
+        });
 
-        // addAppHandler first: there is no getInstance(handler, settings) in this
-        // build, so the handler has to be registered before the instance exists.
-        CefApp.addAppHandler(handler);
-        System.out.println("  a arrancar o CEF...");
         long t0 = System.nanoTime();
-        CefApp app = CefApp.getInstance(new String[0], settings);
+        CefApp app;
+        try {
+            app = builder.build();
+        } catch (Exception ex) {
+            System.out.println("  [cef] build() falhou: " + ex);
+            ex.printStackTrace(System.out);
+            System.exit(1);
+            return;
+        }
         System.out.println("  [cef] arrancado em " + ms(t0) + " ms, estado="
                 + CefApp.getState());
 
+        // The settings go in AFTER the build, the way MCEF does it, and on a
+        // fresh CefSettings rather than the builder's.
+        //
+        // This ordering is not cosmetic. Setting them on the builder before
+        // build() left the browser windowed, and a windowed browser cannot be
+        // screenshotted: createScreenshot threw "UnsupportedOperationException:
+        // Unsupported for windowed rendering" ninety-eight times, which is the
+        // whole reason the spike reported no frames. Windowless rendering is
+        // what makes a screen of a machine with no display possible at all.
+        CefSettings settings = new CefSettings();
+        settings.windowless_rendering_enabled = true;
+        settings.root_cache_path = new File(outDir, "jcef-cache").getAbsolutePath();
+        settings.user_agent_product = "ScreenMine-Spike/0";
+        settings.log_severity = CefSettings.LogSeverity.LOGSEVERITY_WARNING;
+        app.setSettings(settings);
+
         CefClient client = app.createClient();
+
         client.addLoadHandler(new CefLoadHandlerAdapter() {
             @Override
             public void onLoadEnd(org.cef.browser.CefBrowser browser,
@@ -177,31 +236,43 @@ public final class SpikeServerBrowser {
         List<Shot> shots = new ArrayList<>();
         int saved = 0;
         int tick = 0;
+        int attempts = 0;
+        String lastUrl = "";
         while (System.currentTimeMillis() < deadline) {
             app.doMessageLoopWork(10);
             if (++tick % 20 != 0) {
                 Thread.sleep(10);
                 continue;
             }
-            if (!browser.hasDocument() || browser.isLoading()) {
-                continue;
-            }
+            // Do not skip while the page is still loading. A page that never
+            // stops loading - a YouTube embed with a video playing certainly
+            // does not - would then never be captured at all, and the probe
+            // would report "no frames" for a browser that is working fine.
+            // The screenshot itself is the test.
+            attempts++;
             long shotStart = System.nanoTime();
             BufferedImage img;
             try {
                 img = browser.createScreenshot(false).get(10, TimeUnit.SECONDS);
             } catch (Exception ex) {
-                System.out.println("  [shot] falhou: " + ex);
+                if (attempts <= 3) {
+                    System.out.println("  [shot] ainda nao: " + ex);
+                }
                 continue;
             }
             long tookMs = ms(shotStart);
             if (img == null) {
-                System.out.println("  [shot] devolveu null");
+                if (attempts <= 3) {
+                    System.out.println("  [shot] devolveu null");
+                }
                 continue;
             }
+            String pageUrl = browser.getURL();
+            if (!pageUrl.equals(lastUrl)) {
+                lastUrl = pageUrl;
+                System.out.println("  [shot] o browser esta em: " + pageUrl);
+            }
             shots.add(price(img, tookMs));
-            // Keep two pictures on disk so a human can look and confirm this is
-            // really the page and not a grey rectangle.
             if (saved < 2) {
                 File png = new File(outDir, "frame-" + saved + ".png");
                 ImageIO.write(img, "png", png);
@@ -211,6 +282,8 @@ public final class SpikeServerBrowser {
                 saved++;
             }
         }
+        System.out.println("  [shot] tentativas: " + attempts
+                + ", frames capturados: " + shots.size());
 
         report(shots, browser);
         System.out.println();
